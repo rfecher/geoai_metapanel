@@ -1,0 +1,25 @@
+html, body, #root { height: 100%; }
+body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; }
+.app { display: flex; flex-direction: column; height: 100%; }
+.header { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid #e5e7eb; }
+.title { font-weight: 800; }
+.settings { background: #f3f4f6; border: none; border-radius: 6px; padding: 6px 10px; font-weight: 700; }
+.settings-panel { padding: 12px; background: #f9fafb; border-bottom: 1px solid #e5e7eb; }
+.label { font-size: 12px; color: #6b7280; margin: 8px 0 4px; }
+.text-input { width: 100%; box-sizing: border-box; padding: 10px; border-radius: 8px; border: 1px solid #e5e7eb; }
+.scroll { flex: 1; overflow: auto; padding: 8px 0; }
+.empty { padding: 20px; text-align: center; color: #6b7280; }
+.row { display: flex; gap: 8px; padding: 0 12px; margin: 6px 0; }
+.row.reverse { flex-direction: row-reverse; }
+.avatar { width: 36px; height: 36px; border-radius: 18px; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; }
+.bubble { max-width: 82%; padding: 10px; border-radius: 10px; }
+.bubble.persona { background: #f3f4f6; }
+.bubble.user { background: #dbeafe; }
+.author { font-weight: 800; margin-bottom: 4px; }
+.input-row { display: flex; gap: 8px; align-items: center; padding: 10px; border-top: 1px solid #e5e7eb; }
+.input-box { flex: 1; border: 1px solid #e5e7eb; border-radius: 20px; padding: 10px 14px; }
+.send { background: #3b82f6; color: white; font-weight: 800; border: none; border-radius: 18px; padding: 10px 16px; }
+.tip { font-size: 12px; color: #6b7280; margin-top: 6px; }
+.spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid #cbd5e1; border-top-color: #64748b; border-radius: 50%; animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+

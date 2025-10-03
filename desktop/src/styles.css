@@ -1,0 +1,71 @@
+html, body, #root { height: 100%; }
+body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; }
+.app { display: flex; flex-direction: column; height: 100%; }
+.header { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid #e5e7eb; }
+.title { font-weight: 800; }
+.settings { background: #f3f4f6; border: none; border-radius: 6px; padding: 6px 10px; font-weight: 700; }
+.settings-panel { padding: 12px; background: #f9fafb; border-bottom: 1px solid #e5e7eb; }
+.label { font-size: 12px; color: #6b7280; margin: 8px 0 4px; }
+.text-input { width: 100%; box-sizing: border-box; padding: 10px; border-radius: 8px; border: 1px solid #e5e7eb; }
+.scroll { flex: 1; overflow: auto; padding: 8px 0; }
+.empty { padding: 20px; text-align: center; color: #6b7280; }
+.row { display: flex; gap: 8px; padding: 0 12px; margin: 6px 0; }
+.row.reverse { flex-direction: row-reverse; }
+.avatar { width: 36px; height: 36px; border-radius: 18px; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; }
+.bubble { max-width: 82%; padding: 10px; border-radius: 10px; }
+.bubble.persona { background: #f3f4f6; }
+.bubble.user { background: #dbeafe; }
+.author { font-weight: 800; margin-bottom: 4px; }
+.input-row { display: flex; gap: 8px; align-items: center; padding: 10px; border-top: 1px solid #e5e7eb; }
+.input-box { flex: 1; border: 1px solid #e5e7eb; border-radius: 20px; padding: 10px 14px; }
+.send { background: #3b82f6; color: white; font-weight: 800; border: none; border-radius: 18px; padding: 10px 16px; }
+.tip { font-size: 12px; color: #6b7280; margin-top: 6px; }
+.spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid #cbd5e1; border-top-color: #64748b; border-radius: 50%; animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+
+/* Panel discussion strip */
+.panel-strip { display: flex; gap: 10px; padding: 8px 12px; border-bottom: 1px solid #e5e7eb; background: #fafafa; overflow-x: auto; }
+.panelist { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border: 1px solid #e5e7eb; border-radius: 10px; background: white; box-shadow: 0 1px 2px rgba(0,0,0,0.04); }
+.panelist.speaking { border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59,130,246,0.15); animation: pulseGlow 1.5s ease-in-out infinite; }
+.panelist .img { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; }
+.panelist .meta { display: flex; flex-direction: column; line-height: 1.1; }
+.panelist .name { font-weight: 800; font-size: 12px; color: #111827; }
+.panelist .bio { font-size: 11px; color: #6b7280; }
+.badges { display: flex; gap: 6px; align-items: center; margin-left: auto; }
+.badge { font-size: 10px; padding: 2px 6px; border-radius: 999px; background: #f3f4f6; color: #374151; border: 1px solid #e5e7eb; }
+.badge.model { background: #eef2ff; color: #1e3a8a; border-color: #c7d2fe; }
+.badge.thinking { background: #fffbeb; color: #92400e; border-color: #fde68a; }
+.badge.queued { background: #f8fafc; color: #334155; border-color: #e2e8f0; }
+
+.avatar-img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; display: block; }
+
+@keyframes pulseGlow { 0%{ box-shadow: 0 0 0 2px rgba(59,130,246,0.10);} 50%{ box-shadow: 0 0 0 4px rgba(59,130,246,0.25);} 100%{ box-shadow: 0 0 0 2px rgba(59,130,246,0.10);} }
+
+
+/* Stage background */
+.stage {
+  background:
+    radial-gradient(80% 50% at 50% 0%, rgba(0,0,0,0.05), rgba(0,0,0,0) 60%),
+    linear-gradient(180deg, #ffffff, #f8fafc);
+}
+
+/* Now speaking ticker */
+.now-speaking {
+  margin: 8px 12px;
+  padding: 8px 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #ffffffcc;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  backdrop-filter: blur(2px);
+}
+.ns-left { display:flex; align-items:center; gap:10px; }
+.ns-avatar { width:32px; height:32px; border-radius:50%; object-fit:cover; }
+.ns-meta { line-height:1.05; }
+.ns-label { font-size:11px; color:#6b7280; }
+.ns-name { font-weight:800; font-size:13px; }
+.ns-wave { display:flex; align-items:flex-end; gap:2px; height:28px; }
+.ns-wave .bar { width:3px; border-radius:2px; }

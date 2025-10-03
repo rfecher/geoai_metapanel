@@ -1,0 +1,11 @@
+Title: Simulated Experts, Real Insight: A MetaPanel on GeoAI
+
+Abstract: A panel of AI-generated experts explores the current state and future of GeoAI. Through diverse synthetic voices, this session offers a fun, thought-provoking look at open source tools, ethics, and innovation in geospatial artificial intelligence.
+
+Description: What if you could gather the world's leading voices in GeoAI—from open data champions and critical geographers to spatial ML pioneers and field responders—all in one room? What if they weren’t human, but still knew their stuff?
+
+In this thought-provoking session, we present the MetaPanel: a simulated roundtable of AI-generated expert personas crafted using large language models. Each represents a unique ideological and technical stance—from Maya Ríos, an Indigenous data sovereignty advocate, to Prof. Otto Reinhardt, a spatial ontologist with strong opinions about everything (especially your coordinate system).
+
+They’ll tackle topics at the heart of the FOSS4G community: open-source GeoAI tooling, ethical data use, AI-driven mapping for disaster relief, the risks of centralized models, and the future of collaborative spatial intelligence.
+
+This session offers a creative, engaging way to explore the current state of GeoAI and where it’s headed—through the lens of synthetic experts who reflect the complexity and diversity of thought shaping our field.
