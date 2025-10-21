@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TTS Sanitization Test</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+        }
+        .test-case {
+            margin-bottom: 30px;
+            padding: 20px;
+            background: #f9f9f9;
+            border-radius: 6px;
+            border-left: 4px solid #4CAF50;
+        }
+        .test-case h3 {
+            margin-top: 0;
+            color: #333;
+        }
+        .input {
+            background: #fff3cd;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 10px 0;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            white-space: pre-wrap;
+            border: 1px solid #ffc107;
+        }
+        .output {
+            background: #d4edda;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 10px 0;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            white-space: pre-wrap;
+            border: 1px solid #28a745;
+        }
+        .label {
+            font-weight: bold;
+            color: #555;
+            margin-bottom: 5px;
+        }
+        .pass {
+            color: #28a745;
+            font-weight: bold;
+        }
+        .summary {
+            margin-top: 30px;
+            padding: 20px;
+            background: #e7f3ff;
+            border-radius: 6px;
+            border-left: 4px solid #2196F3;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧹 TTS Sanitization Test</h1>
+        <p class="subtitle">Testing the sanitizeTextForTTS function with various formatting markers</p>
+
+        <div id="results"></div>
+
+        <div class="summary">
+            <h3>Summary</h3>
+            <p id="summary"></p>
+        </div>
+    </div>
+
+    <script>
+        // Copy of the sanitization function from tts.ts
+        function sanitizeTextForTTS(text) {
+            let cleaned = text;
+            
+            // Remove <thinking>...</thinking> blocks (including multi-line content)
+            cleaned = cleaned.replace(/<thinking>[\s\S]*?<\/thinking>/gi, '');
+            
+            // Remove other common XML/HTML-style tags with content
+            cleaned = cleaned.replace(/<emphasis>[\s\S]*?<\/emphasis>/gi, '$1');
+            cleaned = cleaned.replace(/<note>[\s\S]*?<\/note>/gi, '');
+            cleaned = cleaned.replace(/<internal>[\s\S]*?<\/internal>/gi, '');
+            
+            // Remove any remaining XML/HTML-style tags
+            cleaned = cleaned.replace(/<[^>]+>/g, '');
+            
+            // Remove asterisks used for emphasis
+            cleaned = cleaned.replace(/\*\*\*([^*]+)\*\*\*/g, '$1');
+            cleaned = cleaned.replace(/\*\*([^*]+)\*\*/g, '$1');
+            cleaned = cleaned.replace(/\*([^*]+)\*/g, '$1');
+            
+            // Remove underscores used for emphasis
+            cleaned = cleaned.replace(/__([^_]+)__/g, '$1');
+            cleaned = cleaned.replace(/_([^_]+)_/g, '$1');
+            
+            // Clean up spaces
+            cleaned = cleaned.replace(/\s+/g, ' ').trim();
+            
+            return cleaned;
+        }
+
+        // Test cases
+        const testCases = [
+            {
+                name: "Qwen-style thinking tags (single line)",
+                input: "<thinking>I should emphasize data sovereignty</thinking>Data sovereignty is a fundamental human right.",
+                expected: "Data sovereignty is a fundamental human right."
+            },
+            {
+                name: "Qwen-style thinking tags (multi-line)",
+                input: `<thinking>
+This is a complex topic.
+I need to be careful here.
+Let me think about the best approach.
+</thinking>
+Indigenous communities have managed spatial data for millennia.`,
+                expected: "Indigenous communities have managed spatial data for millennia."
+            },
+            {
+                name: "Asterisk emphasis",
+                input: "This is *really* important and **very** critical.",
+                expected: "This is really important and very critical."
+            },
+            {
+                name: "Mixed formatting",
+                input: "<thinking>Should I mention this?</thinking>The *proper* coordinate system is **essential** for accuracy.",
+                expected: "The proper coordinate system is essential for accuracy."
+            },
+            {
+                name: "Underscore emphasis",
+                input: "This is _important_ and __very critical__.",
+                expected: "This is important and very critical."
+            },
+            {
+                name: "Multiple tags",
+                input: "<thinking>Internal note</thinking>Open source <emphasis>creates</emphasis> better technology. <note>Remember to cite examples</note>",
+                expected: "Open source creates better technology."
+            },
+            {
+                name: "Clean text (no changes needed)",
+                input: "This is perfectly clean text with no formatting.",
+                expected: "This is perfectly clean text with no formatting."
+            }
+        ];
+
+        // Run tests
+        const resultsDiv = document.getElementById('results');
+        let passed = 0;
+        let failed = 0;
+
+        testCases.forEach((test, index) => {
+            const output = sanitizeTextForTTS(test.input);
+            const success = output === test.expected;
+            
+            if (success) passed++;
+            else failed++;
+
+            const testDiv = document.createElement('div');
+            testDiv.className = 'test-case';
+            testDiv.innerHTML = `
+                <h3>Test ${index + 1}: ${test.name} ${success ? '<span class="pass">✓ PASS</span>' : '<span style="color: #dc3545;">✗ FAIL</span>'}</h3>
+                <div class="label">Input:</div>
+                <div class="input">${escapeHtml(test.input)}</div>
+                <div class="label">Expected:</div>
+                <div class="output">${escapeHtml(test.expected)}</div>
+                <div class="label">Actual:</div>
+                <div class="output">${escapeHtml(output)}</div>
+            `;
+            resultsDiv.appendChild(testDiv);
+        });
+
+        // Summary
+        document.getElementById('summary').innerHTML = `
+            <strong>${passed} of ${testCases.length} tests passed</strong><br>
+            ${failed === 0 ? '✅ All tests passed! The sanitization function is working correctly.' : `⚠️ ${failed} test(s) failed.`}
+        `;
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+    </script>
+</body>
+</html>
+

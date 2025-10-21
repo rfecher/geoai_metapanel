@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="100%" height="100%" preserveAspectRatio="xMidYMid meet" style="width: 100%; height: 100%; display: block;">
+  <defs>
+    <clipPath id="avatarClip">
+      <rect x="0" y="0" width="400" height="400" rx="28" ry="28"></rect>
+    </clipPath>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="2" result="blur"></feGaussianBlur>
+      <feOffset in="blur" dx="0" dy="1" result="offset"></feOffset>
+      <feMerge>
+        <feMergeNode in="offset"></feMergeNode>
+        <feMergeNode in="SourceGraphic"></feMergeNode>
+      </feMerge>
+    </filter>
+
+    <!-- Subtle edge softener for overlays -->
+    <filter id="softEdge" x="-5%" y="-5%" width="110%" height="110%">
+      <feGaussianBlur stdDeviation="0.35"></feGaussianBlur>
+    </filter>
+
+    <!-- Eyelid gradients: darker at lash line, fade to transparent across thickness -->
+    <linearGradient id="gradLidUpper" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#23252b" stop-opacity="0.85"></stop>
+      <stop offset="100%" stop-color="#23252b" stop-opacity="0"></stop>
+    </linearGradient>
+    <linearGradient id="gradLidLower" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0%" stop-color="#23252b" stop-opacity="0.85"></stop>
+      <stop offset="100%" stop-color="#23252b" stop-opacity="0"></stop>
+    </linearGradient>
+
+    <!-- Very subtle sclera highlight gradient -->
+    <linearGradient id="gradEye" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.18"></stop>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0.02"></stop>
+    </linearGradient>
+
+    <!-- Pupil soft edge -->
+    <radialGradient id="gradPupil" cx="50%" cy="50%" r="50%">
+      <stop offset="60%" stop-color="#0b0b0b" stop-opacity="0.95"></stop>
+      <stop offset="100%" stop-color="#0b0b0b" stop-opacity="0"></stop>
+    </radialGradient>
+
+    <!-- Mouth vertical gradient (slightly darker near top/bottom, warmer center) -->
+    <linearGradient id="gradMouthVert" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#4a2a2a" stop-opacity="0.7"></stop>
+      <stop offset="50%" stop-color="#6b3a3a" stop-opacity="0.8"></stop>
+      <stop offset="100%" stop-color="#4a2a2a" stop-opacity="0.7"></stop>
+    </linearGradient>
+
+    <!-- Slightly stronger feather just for mouth edges -->
+    <filter id="mouthFeather" x="-6%" y="-6%" width="112%" height="112%">
+      <feGaussianBlur stdDeviation="0.55"></feGaussianBlur>
+    </filter>
+  </defs>
+
+  <!-- Rig root: transforms applied here for head motion; origin near neck/upper chest -->
+  <g id="rigRoot" clip-path="url(#avatarClip)" style="transform-origin: 200px 170px; transform-box: view-box; transform: translate(0px, 0.118px) rotate(-0.663deg);">
+    <!-- Photo base (realistic!) -->
+    <image href="/avatars/maya.png" x="0" y="0" width="400" height="400" preserveAspectRatio="xMidYMid slice"></image>
+
+    <!-- Eyes overlay (positions derived from faceAnchors: eyes y ≈ 34.58% of 400 = ~138px) -->
+    <g id="eyes">
+      <!-- Optional subtle eye highlights; sclera overlays kept faint so the photo remains visible -->
+      <ellipse id="eyeL" cx="151" cy="154" rx="14" ry="5" fill="url(#gradEye)" opacity="0.12" filter="url(#softShadow)"></ellipse>
+      <ellipse id="eyeR" cx="228" cy="154" rx="14" ry="5" fill="url(#gradEye)" opacity="0.12" filter="url(#softShadow)"></ellipse>
+
+      <!-- Pupils (kept small; you can animate gaze later by translating x/y slightly) -->
+      <circle id="pupilL" cx="151" cy="154" r="7" fill="url(#gradPupil)" opacity="0.9" filter="url(#softEdge)" style="transform-box: fill-box; transform: translate(var(--gazeDx, 0px), var(--gazeDy, 0px)); --gazeDx: 0px; --gazeDy: 0px;"></circle>
+      <circle id="pupilR" cx="228" cy="154" r="7" fill="url(#gradPupil)" opacity="0.9" filter="url(#softEdge)" style="transform-box: fill-box; transform: translate(var(--gazeDx, 0px), var(--gazeDy, 0px)); --gazeDx: 0px; --gazeDy: 0px;"></circle>
+      <!-- Tiny corneal highlights -->
+      <ellipse cx="162" cy="136.5" rx="1.1" ry="0.7" fill="#fff" opacity="0.18" filter="url(#softEdge)"></ellipse>
+      <ellipse cx="222" cy="136.5" rx="1.0" ry="0.6" fill="#fff" opacity="0.18" filter="url(#softEdge)"></ellipse>
+
+      <!-- Eyelids (animated via React by scaling in Y). Colors chosen to match typical lash tones. -->
+      <rect id="lidUpperL" x="138" y="147" width="25" height="6" rx="2" ry="2" fill="url(#gradLidUpper)" opacity="0" filter="url(#softEdge)" style="transform-origin: 50% 0%; transform-box: fill-box; transition: transform 140ms linear, opacity 140ms linear;"></rect>
+      <rect id="lidLowerL" x="138" y="153" width="24" height="6" rx="2" ry="2" fill="url(#gradLidLower)" opacity="0" filter="url(#softEdge)" style="transform-origin: 50% 100%; transform-box: fill-box; transition: transform 140ms linear, opacity 140ms linear;"></rect>
+      <rect id="lidUpperR" x="214" y="149" width="25" height="6" rx="2" ry="2" fill="url(#gradLidUpper)" opacity="0" filter="url(#softEdge)" style="transform-origin: 50% 0%; transform-box: fill-box; transition: transform 140ms linear, opacity 140ms linear;"></rect>
+      <rect id="lidLowerR" x="211" y="153" width="24" height="6" rx="2" ry="2" fill="url(#gradLidLower)" opacity="0" filter="url(#softEdge)" style="transform-origin: 50% 100%; transform-box: fill-box; transition: transform 140ms linear, opacity 140ms linear;"></rect>
+    </g>
+
+    <!-- Mouth overlay (y ≈ 53.745% of 400 = ~215px). React updates rx/ry/cy/opacity for visemes. -->
+    <ellipse id="mouthShape" cx="185" cy="232" rx="20" ry="1" fill="url(#gradMouthVert)" opacity="0.72" filter="url(#mouthFeather)" style="transition: opacity 100ms ease-out;"></ellipse>
+  </g>
+</svg>
