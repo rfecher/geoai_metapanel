@@ -188,6 +188,17 @@ export default function HybridAvatarCalibrator() {
       L: svg.querySelector('#eyeL') as SVGEllipseElement,
       R: svg.querySelector('#eyeR') as SVGEllipseElement,
     };
+
+    // Fix eye gradient opacity: ensure gradient stops use full opacity (1.0)
+    // so that the eye ellipse opacity attribute controls visibility directly
+    const gradEye = svg.querySelector('#gradEye') as SVGLinearGradientElement;
+    if (gradEye) {
+      const stops = gradEye.querySelectorAll('stop');
+      if (stops.length >= 2) {
+        stops[0].setAttribute('stop-opacity', '1.0'); // Top stop: full opacity
+        stops[1].setAttribute('stop-opacity', '1.0'); // Bottom stop: full opacity
+      }
+    }
     // Mouth styling nodes
     refs.current.gradMouth = svg.querySelector('#gradMouthVert') as unknown as SVGLinearGradientElement;
     if (refs.current.gradMouth) {

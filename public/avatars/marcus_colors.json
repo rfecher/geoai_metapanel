@@ -1,0 +1,39 @@
+{
+  "mouth": {
+    "top": "#774b44",
+    "middle": "#6d413c",
+    "bottom": "#74413d",
+    "topRaw": {
+      "r": 119,
+      "g": 75,
+      "b": 68,
+      "a": 255.0
+    },
+    "middleRaw": {
+      "r": 109,
+      "g": 65,
+      "b": 60,
+      "a": 255.0
+    },
+    "bottomRaw": {
+      "r": 116,
+      "g": 65,
+      "b": 61,
+      "a": 255.0
+    }
+  },
+  "eyelids": {
+    "lidUpperL": "#5f4033",
+    "lidLowerL": "#734c40",
+    "lidUpperR": "#45342f",
+    "lidLowerR": "#604239"
+  },
+  "pupils": {
+    "pupilL": "#725043",
+    "pupilR": "#563e36"
+  },
+  "eyes": {
+    "eyeL": "#785243",
+    "eyeR": "#4d352b"
+  }
+}

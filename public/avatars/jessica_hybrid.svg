@@ -19,31 +19,31 @@
 
     <!-- Eyelid gradients: darker at lash line, fade to transparent across thickness -->
     <linearGradient id="gradLidUpper" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#23252b" stop-opacity="0.85"></stop>
-      <stop offset="100%" stop-color="#23252b" stop-opacity="0"></stop>
+      <stop offset="0%" stop-color="#635753" stop-opacity="0.85"></stop>
+      <stop offset="100%" stop-color="#635753" stop-opacity="0"></stop>
     </linearGradient>
     <linearGradient id="gradLidLower" x1="0" y1="1" x2="0" y2="0">
-      <stop offset="0%" stop-color="#23252b" stop-opacity="0.85"></stop>
-      <stop offset="100%" stop-color="#23252b" stop-opacity="0"></stop>
+      <stop offset="0%" stop-color="#635753" stop-opacity="0.85"></stop>
+      <stop offset="100%" stop-color="#635753" stop-opacity="0"></stop>
     </linearGradient>
 
     <!-- Very subtle sclera highlight gradient -->
     <linearGradient id="gradEye" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.18"></stop>
-      <stop offset="100%" stop-color="#ffffff" stop-opacity="0.02"></stop>
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="1.0"></stop>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="1.0"></stop>
     </linearGradient>
 
     <!-- Pupil soft edge -->
     <radialGradient id="gradPupil" cx="50%" cy="50%" r="50%">
-      <stop offset="60%" stop-color="#0b0b0b" stop-opacity="0.95"></stop>
-      <stop offset="100%" stop-color="#0b0b0b" stop-opacity="0"></stop>
+      <stop offset="60%" stop-color="#1e1816" stop-opacity="0.95"></stop>
+      <stop offset="100%" stop-color="#1e1816" stop-opacity="0"></stop>
     </radialGradient>
 
     <!-- Mouth vertical gradient (slightly darker near top/bottom, warmer center) -->
     <linearGradient id="gradMouthVert" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#4a2a2a" stop-opacity="0.7"></stop>
-      <stop offset="50%" stop-color="#6b3a3a" stop-opacity="0.8"></stop>
-      <stop offset="100%" stop-color="#4a2a2a" stop-opacity="0.7"></stop>
+      <stop offset="0%" stop-color="#a2615f" stop-opacity="0.7"></stop>
+      <stop offset="50%" stop-color="#9f5e5d" stop-opacity="0.8"></stop>
+      <stop offset="100%" stop-color="#9a5a59" stop-opacity="0.7"></stop>
     </linearGradient>
 
     <!-- Slightly stronger feather just for mouth edges -->
@@ -64,8 +64,8 @@
       <ellipse id="eyeR" cx="225" cy="133" rx="14" ry="5" fill="url(#gradEye)" opacity="0.12" filter="url(#softShadow)"></ellipse>
 
       <!-- Pupils (kept small; you can animate gaze later by translating x/y slightly) -->
-      <circle id="pupilL" cx="168" cy="140" r="7" fill="url(#gradPupil)" opacity="0.9" filter="url(#softEdge)" style="transform-box: fill-box; transform: translate(var(--gazeDx, 0px), var(--gazeDy, 0px)); --gazeDx: 0px; --gazeDy: 0px;"></circle>
-      <circle id="pupilR" cx="235" cy="137" r="7" fill="url(#gradPupil)" opacity="0.9" filter="url(#softEdge)" style="transform-box: fill-box; transform: translate(var(--gazeDx, 0px), var(--gazeDy, 0px)); --gazeDx: 0px; --gazeDy: 0px;"></circle>
+      <circle id="pupilL" cx="168" cy="140" r="7" fill="url(#gradPupil)" opacity="0.9" filter="url(#softEdge)"></circle>
+      <circle id="pupilR" cx="235" cy="137" r="7" fill="url(#gradPupil)" opacity="0.9" filter="url(#softEdge)"></circle>
       <!-- Tiny corneal highlights -->
       <ellipse cx="162" cy="131.5" rx="1.1" ry="0.7" fill="#fff" opacity="0.18" filter="url(#softEdge)"></ellipse>
       <ellipse cx="222" cy="131.5" rx="1.0" ry="0.6" fill="#fff" opacity="0.18" filter="url(#softEdge)"></ellipse>

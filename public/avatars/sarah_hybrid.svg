@@ -19,31 +19,31 @@
 
     <!-- Eyelid gradients: darker at lash line, fade to transparent across thickness -->
     <linearGradient id="gradLidUpper" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#23252b" stop-opacity="0.85"></stop>
-      <stop offset="100%" stop-color="#23252b" stop-opacity="0"></stop>
+      <stop offset="0%" stop-color="#786056" stop-opacity="0.85"></stop>
+      <stop offset="100%" stop-color="#786056" stop-opacity="0"></stop>
     </linearGradient>
     <linearGradient id="gradLidLower" x1="0" y1="1" x2="0" y2="0">
-      <stop offset="0%" stop-color="#23252b" stop-opacity="0.85"></stop>
-      <stop offset="100%" stop-color="#23252b" stop-opacity="0"></stop>
+      <stop offset="0%" stop-color="#786056" stop-opacity="0.85"></stop>
+      <stop offset="100%" stop-color="#786056" stop-opacity="0"></stop>
     </linearGradient>
 
     <!-- Very subtle sclera highlight gradient -->
     <linearGradient id="gradEye" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.18"></stop>
-      <stop offset="100%" stop-color="#ffffff" stop-opacity="0.02"></stop>
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="1.0"></stop>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="1.0"></stop>
     </linearGradient>
 
     <!-- Pupil soft edge -->
     <radialGradient id="gradPupil" cx="50%" cy="50%" r="50%">
-      <stop offset="60%" stop-color="#0b0b0b" stop-opacity="0.95"></stop>
-      <stop offset="100%" stop-color="#0b0b0b" stop-opacity="0"></stop>
+      <stop offset="60%" stop-color="#1f1714" stop-opacity="0.95"></stop>
+      <stop offset="100%" stop-color="#1f1714" stop-opacity="0"></stop>
     </radialGradient>
 
     <!-- Mouth vertical gradient (slightly darker near top/bottom, warmer center) -->
     <linearGradient id="gradMouthVert" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#4a2a2a" stop-opacity="0.7"></stop>
-      <stop offset="50%" stop-color="#6b3a3a" stop-opacity="0.8"></stop>
-      <stop offset="100%" stop-color="#4a2a2a" stop-opacity="0.7"></stop>
+      <stop offset="0%" stop-color="#b5726e" stop-opacity="0.7"></stop>
+      <stop offset="50%" stop-color="#b16d68" stop-opacity="0.8"></stop>
+      <stop offset="100%" stop-color="#b06c67" stop-opacity="0.7"></stop>
     </linearGradient>
 
     <!-- Slightly stronger feather just for mouth edges -->
@@ -53,7 +53,7 @@
   </defs>
 
   <!-- Rig root: transforms applied here for head motion; origin near neck/upper chest -->
-  <g id="rigRoot" clip-path="url(#avatarClip)" style="transform-origin: 200px 170px; transform-box: view-box; transform: translate(0px, -0.323px) rotate(0.889deg);">
+  <g id="rigRoot" clip-path="url(#avatarClip)" style="transform-origin: 200px 170px; transform-box: view-box; transform: translate(0px, 0.423px) rotate(0.78deg);">
     <!-- Photo base (realistic!) -->
     <image href="/avatars/sarah.png" x="0" y="0" width="400" height="400" preserveAspectRatio="xMidYMid slice"></image>
 
@@ -64,16 +64,16 @@
       <ellipse id="eyeR" cx="225" cy="134" rx="14" ry="5" fill="url(#gradEye)" opacity="0.12" filter="url(#softShadow)"></ellipse>
 
       <!-- Pupils (kept small; you can animate gaze later by translating x/y slightly) -->
-      <circle id="pupilL" cx="165" cy="144" r="7" fill="url(#gradPupil)" opacity="0.9" filter="url(#softEdge)" style="transform-box: fill-box; transform: translate(var(--gazeDx, 0px), var(--gazeDy, 0px)); --gazeDx: 0px; --gazeDy: 0px;"></circle>
-      <circle id="pupilR" cx="227" cy="145" r="7" fill="url(#gradPupil)" opacity="0.9" filter="url(#softEdge)" style="transform-box: fill-box; transform: translate(var(--gazeDx, 0px), var(--gazeDy, 0px)); --gazeDx: 0px; --gazeDy: 0px;"></circle>
+      <circle id="pupilL" cx="165" cy="144" r="7" fill="url(#gradPupil)" opacity="0.9" filter="url(#softEdge)" style="transform-box: fill-box; transform: translate(var(--gazeDx, 0px), var(--gazeDy, 0px)); transition: transform 323.587ms cubic-bezier(0.2, 0, 0.2, 1); --gazeDx: 0px; --gazeDy: 0px;"></circle>
+      <circle id="pupilR" cx="227" cy="145" r="7" fill="url(#gradPupil)" opacity="0.9" filter="url(#softEdge)" style="transform-box: fill-box; transform: translate(var(--gazeDx, 0px), var(--gazeDy, 0px)); transition: transform 323.587ms cubic-bezier(0.2, 0, 0.2, 1); --gazeDx: 0px; --gazeDy: 0px;"></circle>
       <!-- Tiny corneal highlights -->
       <ellipse cx="162" cy="132.5" rx="1.1" ry="0.7" fill="#fff" opacity="0.18" filter="url(#softEdge)"></ellipse>
       <ellipse cx="222" cy="132.5" rx="1.0" ry="0.6" fill="#fff" opacity="0.18" filter="url(#softEdge)"></ellipse>
 
       <!-- Eyelids (animated via React by scaling in Y). Colors chosen to match typical lash tones. -->
-      <rect id="lidUpperL" x="149" y="140" width="25" height="5" rx="2" ry="2" fill="url(#gradLidUpper)" opacity="0" filter="url(#softEdge)" style="transform-origin: 50% 0%; transform-box: fill-box; transition: transform 140ms linear, opacity 140ms linear;"></rect>
+      <rect id="lidUpperL" x="149" y="140" width="25" height="5" rx="2" ry="2" fill="url(#gradLidUpper)" opacity="0" filter="url(#softEdge)" style="transform-origin: 50% 0%; transform-box: fill-box; transition: opacity 240ms;"></rect>
       <rect id="lidLowerL" x="149" y="143" width="25" height="5" rx="2" ry="2" fill="url(#gradLidLower)" opacity="0" filter="url(#softEdge)" style="transform-origin: 50% 100%; transform-box: fill-box; transition: transform 140ms linear, opacity 140ms linear;"></rect>
-      <rect id="lidUpperR" x="217" y="141" width="25" height="5" rx="2" ry="2" fill="url(#gradLidUpper)" opacity="0" filter="url(#softEdge)" style="transform-origin: 50% 0%; transform-box: fill-box; transition: transform 140ms linear, opacity 140ms linear;"></rect>
+      <rect id="lidUpperR" x="217" y="141" width="25" height="5" rx="2" ry="2" fill="url(#gradLidUpper)" opacity="0" filter="url(#softEdge)" style="transform-origin: 50% 0%; transform-box: fill-box; transition: opacity 240ms;"></rect>
       <rect id="lidLowerR" x="216" y="143" width="25" height="5" rx="2" ry="2" fill="url(#gradLidLower)" opacity="0" filter="url(#softEdge)" style="transform-origin: 50% 100%; transform-box: fill-box; transition: transform 140ms linear, opacity 140ms linear;"></rect>
     </g>
 

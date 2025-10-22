@@ -83,8 +83,8 @@ export default function SvgAnimatedAvatar({
     // Gaze
     gazeEnabled: animationConfig?.gazeEnabled ?? true,
     gazeIntervalSec: Math.max(2, Math.min(12, animationConfig?.gazeIntervalSec ?? 5)),
-    gazeLateralPx: Math.max(0, Math.min(6, animationConfig?.gazeLateralPx ?? 3)),
-    gazeVerticalPx: Math.max(0, Math.min(4, animationConfig?.gazeVerticalPx ?? 1.2)),
+    gazeLateralPx: Math.max(0, Math.min(20, animationConfig?.gazeLateralPx ?? 3)),
+    gazeVerticalPx: Math.max(0, Math.min(15, animationConfig?.gazeVerticalPx ?? 1.2)),
     lidCoupleThresholdPx: Math.max(2, Math.min(5, animationConfig?.lidCoupleThresholdPx ?? 3)),
     // Dilation
     dilationEnabled: animationConfig?.dilationEnabled ?? true,
@@ -159,6 +159,13 @@ export default function SvgAnimatedAvatar({
 
     refs.current = { rigRoot, mouth, lidUL, lidLL, lidUR, lidLR, pupilL, pupilR, eyeL, eyeR };
 
+    console.log('[SvgAnimatedAvatar] Refs populated:', {
+      hasPupilL: !!pupilL,
+      hasPupilR: !!pupilR,
+      hasMouth: !!mouth,
+      hasRigRoot: !!rigRoot,
+    });
+
     // Cache base mouth geometry from the SVG (respects calibration)
     if (mouth) {
       refs.current.baseMouth = {
@@ -179,6 +186,9 @@ export default function SvgAnimatedAvatar({
         el.style.transform = 'translate(var(--gazeDx, 0px), var(--gazeDy, 0px)) translate(var(--microDx, 0px), var(--microDy, 0px))';
         el.style.transition = 'transform 220ms ease-out';
       });
+      console.log('[SvgAnimatedAvatar] Pupil transforms initialized');
+    } else {
+      console.warn('[SvgAnimatedAvatar] Pupils NOT found in SVG! pupilL:', pupilL, 'pupilR:', pupilR);
     }
 
     // Ensure transforms on eyelids use element's geometry box
@@ -243,7 +253,11 @@ export default function SvgAnimatedAvatar({
 
   // Optional: subtle micro-saccades for pupils (uses CSS vars to compose with gaze layer)
   useEffect(() => {
-    const r = refs.current; if (!r?.pupilL || !r?.pupilR) return;
+    const r = refs.current; if (!r?.pupilL || !r?.pupilR) {
+      console.log('[SvgAnimatedAvatar] Micro-saccades: pupils not found in refs');
+      return;
+    }
+    console.log('[SvgAnimatedAvatar] Micro-saccades ENABLED');
     let alive = true;
     let timer: any;
     const jitter = () => {
@@ -272,7 +286,7 @@ export default function SvgAnimatedAvatar({
     // Start after a brief delay to avoid first-frame jump
     timer = setTimeout(jitter, 1800);
     return () => { alive = false; clearTimeout(timer); };
-  }, []);
+  }, [svgMarkup]);
 
 
   // Head micro-movement via rigRoot: breathing sway, micro-tilts, and emphasis nods
@@ -329,8 +343,19 @@ export default function SvgAnimatedAvatar({
 
   // Eye gaze shifts (slow layer) composed with micro-saccades via CSS vars
   useEffect(() => {
-    if (!cfg.gazeEnabled) return;
-    const r = refs.current; if (!r?.pupilL || !r?.pupilR) return;
+    if (!cfg.gazeEnabled) {
+      console.log('[SvgAnimatedAvatar] Gaze animation DISABLED');
+      return;
+    }
+    const r = refs.current; if (!r?.pupilL || !r?.pupilR) {
+      console.log('[SvgAnimatedAvatar] Gaze animation: pupils not found in refs');
+      return;
+    }
+    console.log('[SvgAnimatedAvatar] Gaze animation ENABLED - config:', {
+      gazeIntervalSec: cfg.gazeIntervalSec,
+      gazeLateralPx: cfg.gazeLateralPx,
+      gazeVerticalPx: cfg.gazeVerticalPx,
+    });
     let alive = true;
     let timer: any;
 
@@ -340,6 +365,7 @@ export default function SvgAnimatedAvatar({
       const jitter = 0.3 + Math.random() * 0.6; // 0.3–0.9 multiplier around mean
       const baseDelay = mean * jitter;
       const delay = isSpeaking ? baseDelay * 1.5 : baseDelay; // less frequent during speech
+      console.log(`[SvgAnimatedAvatar] Scheduling next gaze shift in ${(delay/1000).toFixed(1)}s`);
       timer = setTimeout(() => shift(), delay);
     };
 
@@ -351,11 +377,14 @@ export default function SvgAnimatedAvatar({
       const goMs = 300 + Math.random() * 400;   // 300–700ms
       const holdMs = 2000 + Math.random() * 2000; // 2–4s
 
+      console.log(`[SvgAnimatedAvatar] GAZE SHIFT: dx=${dx.toFixed(2)}px, dy=${dy.toFixed(2)}px, duration=${goMs}ms, hold=${holdMs}ms`);
+
       [r.pupilL, r.pupilR].forEach((el) => {
         if (!el) return;
         el.style.transition = `transform ${goMs}ms cubic-bezier(0.2, 0, 0.2, 1)`;
         el.style.setProperty('--gazeDx', `${dx.toFixed(2)}px`);
         el.style.setProperty('--gazeDy', `${dy.toFixed(2)}px`);
+        console.log(`[SvgAnimatedAvatar] Set ${el.id}: --gazeDx=${el.style.getPropertyValue('--gazeDx')}, --gazeDy=${el.style.getPropertyValue('--gazeDy')}`);
       });
 
       // Slight lid response when far lateral
@@ -369,6 +398,7 @@ export default function SvgAnimatedAvatar({
 
       // Return to center after hold
       setTimeout(() => {
+        console.log(`[SvgAnimatedAvatar] GAZE RETURN to center`);
         [r.pupilL, r.pupilR].forEach((el) => {
           if (!el) return;
           el.style.transition = `transform ${goMs + 120}ms cubic-bezier(0.2, 0, 0.2, 1)`;
@@ -387,12 +417,16 @@ export default function SvgAnimatedAvatar({
 
     schedule();
     return () => { alive = false; clearTimeout(timer); };
-  }, [isSpeaking, cfg.gazeEnabled, cfg.gazeIntervalSec, cfg.gazeLateralPx, cfg.gazeVerticalPx, cfg.lidCoupleThresholdPx]);
+  }, [svgMarkup, isSpeaking, cfg.gazeEnabled, cfg.gazeIntervalSec, cfg.gazeLateralPx, cfg.gazeVerticalPx, cfg.lidCoupleThresholdPx]);
 
   // Pupil dilation (slow variation)
   useEffect(() => {
     if (!cfg.dilationEnabled) return;
-    const r = refs.current; if (!r?.pupilL || !r?.pupilR || !r.basePupils) return;
+    const r = refs.current; if (!r?.pupilL || !r?.pupilR || !r.basePupils) {
+      console.log('[SvgAnimatedAvatar] Pupil dilation: pupils not found in refs');
+      return;
+    }
+    console.log('[SvgAnimatedAvatar] Pupil dilation ENABLED');
     let raf = 0;
     const baseL = r.basePupils.rL; // e.g., 4
     const baseR = r.basePupils.rR; // e.g., 3
@@ -413,7 +447,7 @@ export default function SvgAnimatedAvatar({
     };
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
-  }, [cfg.dilationEnabled, cfg.dilationRangeLPx, cfg.dilationRangeRPx, cfg.dilationPeriodSec]);
+  }, [svgMarkup, cfg.dilationEnabled, cfg.dilationRangeLPx, cfg.dilationRangeRPx, cfg.dilationPeriodSec]);
 
 
   const sizeConfig = { small: { w: 80, h: 80 }, medium: { w: 160, h: 160 }, large: { w: 320, h: 320 } };
