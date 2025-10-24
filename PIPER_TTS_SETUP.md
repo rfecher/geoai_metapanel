@@ -46,7 +46,7 @@ The app automatically assigns high-quality voices to each persona:
 |---------|-------------|-----------|
 | **Maya Ríos** | `en_GB-alba-medium` | Warm, thoughtful female (British) |
 | **Prof. Otto Reinhardt** | `en_US-lessac-medium` | Formal, precise male |
-| **Dr. Sarah Hayes** | `en_US-amy-medium` | Friendly, energetic female |
+| **Dr. Sarah Chen** | `en_US-amy-medium` | Friendly, energetic female |
 | **Dr. Marcus Webb** | `en_US-ryan-medium` | Professional, confident male |
 | **Lt. Col. Jessica Hayes** | `en_US-libritts-high` | Authoritative, clear female |
 

@@ -14,7 +14,7 @@ Each persona now has a carefully selected Piper voice that matches their charact
 |---------|-------|-----------------|
 | **Maya Ríos** | `en_GB-alba-medium` | Warm, thoughtful female (British accent fits her measured, principled style) |
 | **Prof. Otto Reinhardt** | `en_US-lessac-medium` | Formal, precise male (academic, pedantic tone) |
-| **Dr. Sarah Hayes** | `en_US-amy-medium` | Friendly, energetic female (collaborative, enthusiastic) |
+| **Dr. Sarah Chen** | `en_US-amy-medium` | Friendly, energetic female (collaborative, enthusiastic) |
 | **Dr. Marcus Webb** | `en_US-ryan-medium` | Professional, confident male (business-like, results-driven) |
 | **Lt. Col. Jessica Hayes** | `en_US-libritts-high` | Authoritative, clear female (military bearing, direct) |
 

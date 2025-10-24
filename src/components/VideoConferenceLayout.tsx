@@ -17,6 +17,7 @@ type VideoConferenceLayoutProps = {
   busy: boolean;
   generatedAvatars?: Record<string, string>;
   useGeneratedAvatars?: boolean;
+  enableListeningAnimations?: boolean;
 };
 
 export default function VideoConferenceLayout({
@@ -32,6 +33,7 @@ export default function VideoConferenceLayout({
   busy,
   generatedAvatars = {},
   useGeneratedAvatars = false,
+  enableListeningAnimations = true,
 }: VideoConferenceLayoutProps) {
   const speakingPersona = personas.find(p => p.id === speakingPersonaId);
 
@@ -85,6 +87,7 @@ export default function VideoConferenceLayout({
                   color={p.color}
                   size="small"
                   isSpeaking={false}
+                  isListening={enableListeningAnimations && !!speakingPersonaId}
                   audioAmplitude={0}
                   visemePose={visemesByPersona[p.id]}
                   animationConfig={p.animationConfig}
@@ -128,6 +131,7 @@ export default function VideoConferenceLayout({
                   color={p.color}
                   size="medium"
                   isSpeaking={speaking}
+                  isListening={enableListeningAnimations && !speaking && !!speakingPersonaId}
                   audioAmplitude={audioAmplitudes[p.id] || 0}
                   visemePose={visemesByPersona[p.id]}
                   animationConfig={p.animationConfig}

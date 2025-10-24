@@ -71,10 +71,10 @@ export default function HybridAvatarCalibrator() {
   const [advOpen, setAdvOpen] = useState(true);
   const [advancedAnimations, setAdvancedAnimations] = useState({
     head: {
-      swayPx: 0.45,
-      tiltDeg: 0.9,
+      swayPx: 2.5,  // Increased from 0.45 for more visible movement
+      tiltDeg: 1.8,  // Increased from 0.9 for more visible rotation
       nodThreshold: 0.65,
-      nodMaxDeg: 0.9,
+      nodMaxDeg: 1.5,  // Increased from 0.9
       originY: 170,
     },
     gaze: {
@@ -139,6 +139,7 @@ export default function HybridAvatarCalibrator() {
     rigRoot?: SVGGElement;
     lids: Partial<Record<Lid, SVGRectElement>>;
     mouth?: SVGEllipseElement;
+    mouthCavity?: SVGEllipseElement;
     pupils: { L?: SVGCircleElement; R?: SVGCircleElement };
     eyes: { L?: SVGEllipseElement; R?: SVGEllipseElement };
     gradMouth?: SVGLinearGradientElement;
@@ -169,6 +170,7 @@ export default function HybridAvatarCalibrator() {
       lidLowerR: svg.querySelector('#lidLowerR') as SVGRectElement,
     };
     refs.current.mouth = svg.querySelector('#mouthShape') as SVGEllipseElement;
+    refs.current.mouthCavity = svg.querySelector('#mouthCavity') as SVGEllipseElement;
     refs.current.pupils = {
       L: svg.querySelector('#pupilL') as SVGCircleElement,
       R: svg.querySelector('#pupilR') as SVGCircleElement,
@@ -383,44 +385,136 @@ export default function HybridAvatarCalibrator() {
 
     const once = () => {
       const lids = refs.current.lids;
-      const dur = 140;
+      const closeDur = 85;   // fast close
+      const holdDur = 45;    // tiny hold
+      const openDur = 140;   // slower open
+
+      // Close phase - increased opacity for more visible blinks
       (Object.keys(lids) as Lid[]).forEach(key => {
         const el = lids[key]; if (!el) return;
-        el.style.transition = `transform ${dur}ms linear, opacity ${dur}ms linear`;
+        el.style.transition = `transform ${closeDur}ms cubic-bezier(0.4, 0, 0.6, 1), opacity ${closeDur}ms cubic-bezier(0.4, 0, 0.6, 1)`;
         el.style.transform = 'scaleY(1)';
-        el.style.opacity = `${Math.max(0.7, (lid[key]?.opacity ?? 0.85))}`;
+        // Increased from 0.7 to 0.95 for much more visible blinks
+        el.style.opacity = '0.95';
       });
+
+      // Open phase after hold
       setTimeout(() => {
         (Object.keys(lids) as Lid[]).forEach(key => {
           const el = lids[key]; if (!el) return;
+          el.style.transition = `transform ${openDur}ms cubic-bezier(0.2, 0, 0.3, 1), opacity ${openDur}ms cubic-bezier(0.2, 0, 0.3, 1)`;
           el.style.transform = 'scaleY(0)';
           el.style.opacity = `${lid[key]?.opacity ?? 0}`;
+        });
+      }, closeDur + holdDur);
+    };
 
-	  // Apply rig root transform origin per calibrator control
-	  useEffect(() => {
-	    const rr = refs.current.rigRoot; if (!rr) return;
-	    (rr.style as any).transformOrigin = `200px ${advancedAnimations.head.originY}px`;
-	  }, [advancedAnimations.head.originY, svgMarkup]);
+    if (blinkNow) {
+      once();
+      setBlinkNow(false);
+      return;
+    }
 
-	  // Head micro-movement preview: sway + tilt + emphasis nods (uses mouth 'open' as amplitude proxy)
-	  useEffect(() => {
-	    const rr = refs.current.rigRoot; if (!rr) return;
-	    let raf = 0; let lastT = performance.now();
-	    let impulse = 0; let impulseVel = 0; let cooldown = 0;
-	    const twoPi = Math.PI * 2;
-	    const phase1 = Math.random() * twoPi;
-	    const phase2 = Math.random() * twoPi;
-	    const period1 = 9000 + Math.random() * 4000;
-	    const period2 = 12000 + Math.random() * 6000;
-	    let sm = 0; // smoothed open
+    const schedule = () => {
+      // Faster blink rate for calibration (1.5s mean vs 4s in production)
+      const mean = 1500; // ms - much faster for easier calibration
+      const jitter = 0.5;
+      const min = Math.max(250, mean * (1 - jitter));
+      const max = mean * (1 + jitter);
+      const delay = min + Math.random() * (max - min);
+      timer = setTimeout(() => { once(); schedule(); }, delay);
+    };
+    schedule();
+    return () => clearTimeout(timer);
+  }, [autoBlink, blinkNow, lid]);
+
+  // Apply rig root transform origin per calibrator control
+  useEffect(() => {
+    const rr = refs.current.rigRoot; if (!rr) return;
+    (rr.style as any).transformOrigin = `200px ${advancedAnimations.head.originY}px`;
+  }, [advancedAnimations.head.originY, svgMarkup]);
+
+  // Head micro-movement preview: sway + tilt + emphasis nods (uses mouth 'open' as amplitude proxy)
+  useEffect(() => {
+    const rr = refs.current.rigRoot; if (!rr) return;
+    let raf = 0; let lastT = performance.now();
+    let impulse = 0; let impulseVel = 0; let cooldown = 0;
+    const twoPi = Math.PI * 2;
+    let sm = 0; // smoothed open
+
+    // Multi-layered natural movement system with varied periods (using prime-like numbers to avoid repetition)
+	    // Layer 1: Breathing rhythm (slow, primary vertical)
+	    const breathPhase = Math.random() * twoPi;
+	    const breathPeriod = 3700 + Math.random() * 1300; // 3.7-5s breathing cycle
+
+	    // Layer 2: Slow drift (very slow random walk)
+	    const driftPhaseX = Math.random() * twoPi;
+	    const driftPhaseY = Math.random() * twoPi;
+	    const driftPeriodX = 23000 + Math.random() * 17000; // 23-40s
+	    const driftPeriodY = 19000 + Math.random() * 13000; // 19-32s
+
+	    // Layer 3: Micro-adjustments (small corrections)
+	    const microPhaseX = Math.random() * twoPi;
+	    const microPhaseY = Math.random() * twoPi;
+	    const microPhaseTilt = Math.random() * twoPi;
+	    const microPeriodX = 7300 + Math.random() * 3700; // 7.3-11s
+	    const microPeriodY = 5900 + Math.random() * 4100; // 5.9-10s
+	    const microPeriodTilt = 8700 + Math.random() * 5300; // 8.7-14s
+
+	    // Layer 4: Subtle tremor/noise (high frequency, very low amplitude)
+	    const tremorPhaseX = Math.random() * twoPi;
+	    const tremorPhaseY = Math.random() * twoPi;
+	    const tremorPeriodX = 1100 + Math.random() * 900; // 1.1-2s
+	    const tremorPeriodY = 1300 + Math.random() * 700; // 1.3-2s
+
+	    // Amplitude modulation over time (makes movement less predictable)
+	    const ampModPhase = Math.random() * twoPi;
+	    const ampModPeriod = 31000 + Math.random() * 19000; // 31-50s very slow amplitude variation
+
+	    // Easing function for more natural acceleration/deceleration
+	    const smoothstep = (x: number) => x * x * (3 - 2 * x);
+	    const easeInOutCubic = (x: number) => x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
 
 	    const loop = (t: number) => {
 	      const dt = t - lastT; lastT = t;
 	      sm = sm * 0.85 + open * 0.15;
 	      const speakLevel = Math.max(sm, animateMouth ? 0.4 : 0);
 	      const idleGain = Math.max(0.15, 1 - speakLevel * 0.9);
-	      const sway = Math.sin((t + phase1) / period1 * twoPi) * advancedAnimations.head.swayPx * idleGain;
-	      const tilt = Math.sin((t + phase2) / period2 * twoPi) * advancedAnimations.head.tiltDeg * idleGain;
+
+	      // Amplitude modulation: slowly vary the overall movement intensity
+	      const ampMod = 0.7 + 0.3 * Math.sin((t + ampModPhase) / ampModPeriod * twoPi);
+
+	      // Layer 1: Breathing - primary vertical movement with natural ease-in-out
+	      const breathRaw = Math.sin((t + breathPhase) / breathPeriod * twoPi);
+	      const breathEased = easeInOutCubic((breathRaw + 1) / 2) * 2 - 1; // Apply easing to sine
+	      const breathY = breathEased * advancedAnimations.head.swayPx * 0.5 * idleGain * ampMod; // Increased from 0.6 to 0.5 (but base is now 2.5px)
+
+	      // Layer 2: Slow drift - gentle random walk in both axes
+	      const driftX = Math.sin((t + driftPhaseX) / driftPeriodX * twoPi) * advancedAnimations.head.swayPx * 0.35 * idleGain * ampMod; // Increased from 0.25
+	      const driftY = Math.sin((t + driftPhaseY) / driftPeriodY * twoPi) * advancedAnimations.head.swayPx * 0.25 * idleGain * ampMod; // Increased from 0.3
+
+	      // Layer 3: Micro-adjustments - small periodic corrections
+	      const microX = Math.sin((t + microPhaseX) / microPeriodX * twoPi) * advancedAnimations.head.swayPx * 0.2 * idleGain; // Increased from 0.15
+	      const microY = Math.sin((t + microPhaseY) / microPeriodY * twoPi) * advancedAnimations.head.swayPx * 0.15 * idleGain; // Increased from 0.2
+	      const microTiltRaw = Math.sin((t + microPhaseTilt) / microPeriodTilt * twoPi);
+	      const microTiltEased = smoothstep((microTiltRaw + 1) / 2) * 2 - 1;
+	      const microTilt = microTiltEased * advancedAnimations.head.tiltDeg * 0.6 * idleGain * ampMod; // Increased from 0.5
+
+	      // Layer 4: Tremor - very subtle high-frequency noise
+	      const tremorX = Math.sin((t + tremorPhaseX) / tremorPeriodX * twoPi) * advancedAnimations.head.swayPx * 0.08 * idleGain; // Increased from 0.05
+	      const tremorY = Math.sin((t + tremorPhaseY) / tremorPeriodY * twoPi) * advancedAnimations.head.swayPx * 0.08 * idleGain; // Increased from 0.05
+
+	      // Layer 5: Slow rotational drift
+	      const driftTiltRaw = Math.sin((t + driftPhaseY * 1.3) / (driftPeriodY * 1.4) * twoPi);
+	      const driftTiltEased = smoothstep((driftTiltRaw + 1) / 2) * 2 - 1;
+	      const driftTilt = driftTiltEased * advancedAnimations.head.tiltDeg * 0.5 * idleGain * ampMod; // Increased from 0.4
+
+	      // Combine all layers
+	      const translateX = driftX + microX + tremorX;
+	      const translateY = breathY + driftY + microY + tremorY;
+	      const baseTilt = microTilt + driftTilt;
+
+	      // Emphasis nod impulse
 	      cooldown = Math.max(0, cooldown - dt);
 	      const spike = sm > advancedAnimations.head.nodThreshold && cooldown === 0;
 	      if (spike) { impulseVel += 0.012 + Math.random() * 0.008; cooldown = 1800 + Math.random() * 1400; }
@@ -428,7 +522,9 @@ export default function HybridAvatarCalibrator() {
 	      impulseVel += (-0.015 * impulse - 0.008 * impulseVel) * dt;
 	      const maxImp = advancedAnimations.head.nodMaxDeg * (animateMouth ? 1 : 0.6);
 	      impulse = Math.max(-maxImp, Math.min(maxImp, impulse));
-	      rr.style.transform = `translate(0px, ${sway.toFixed(3)}px) rotate(${(tilt + impulse).toFixed(3)}deg)`;
+
+	      const totalRotate = baseTilt + impulse;
+	      rr.style.transform = `translate(${translateX.toFixed(3)}px, ${translateY.toFixed(3)}px) rotate(${totalRotate.toFixed(3)}deg)`;
 	      raf = requestAnimationFrame(loop);
 	    };
 	    raf = requestAnimationFrame(loop);
@@ -502,29 +598,6 @@ export default function HybridAvatarCalibrator() {
 	    return () => cancelAnimationFrame(raf);
 	  }, [advancedAnimations.dilation.enabled, advancedAnimations.dilation.rangeLPx, advancedAnimations.dilation.rangeRPx, advancedAnimations.dilation.periodSec]);
 
-        });
-      }, dur + 50);
-    };
-
-    if (blinkNow) {
-      once();
-      setBlinkNow(false);
-      return;
-    }
-
-    const schedule = () => {
-      // Faster blink rate for calibration (1.5s mean vs 4s in production)
-      const mean = 1500; // ms - much faster for easier calibration
-      const jitter = 0.5;
-      const min = Math.max(250, mean * (1 - jitter));
-      const max = mean * (1 + jitter);
-      const delay = min + Math.random() * (max - min);
-      timer = setTimeout(() => { once(); schedule(); }, delay);
-    };
-    schedule();
-    return () => clearTimeout(timer);
-  }, [autoBlink, blinkNow, lid]);
-
   // Mouth viseme preview: drive rx/ry/cy/opacity relative to calibrated base
   useEffect(() => {
     if (!animateMouth) return;
@@ -539,6 +612,20 @@ export default function HybridAvatarCalibrator() {
 
     (el.style as any).transition = 'opacity 100ms ease-out';
     el.style.opacity = String(Math.min(1, Math.max(0, mouth.opacity + open * mouthAnim.opacityRange)));
+
+    // Drive mouth cavity for depth effect
+    if (refs.current.mouthCavity) {
+      const cavity = refs.current.mouthCavity;
+      const cavityRx = rx * 0.75;
+      const cavityRy = Math.max(0.5, ry * 0.85);
+      cavity.setAttribute('rx', `${cavityRx}`);
+      cavity.setAttribute('ry', `${cavityRy}`);
+      cavity.setAttribute('cy', `${baseCy + open * mouthAnim.verticalMovePx}`);
+      // Enhanced visibility: lower threshold (0.10), higher max opacity (0.90), faster ramp-up (1.5x)
+      const cavityOpacity = open < 0.10 ? 0 : Math.min(0.90, (open - 0.10) * 1.5);
+      (cavity.style as any).transition = 'opacity 100ms ease-out';
+      cavity.style.opacity = String(cavityOpacity);
+    }
   }, [animateMouth, open, wide, round, mouth.rx, mouth.ry, mouth.cy, mouth.opacity, mouthAnim]);
 
   // Auto mouth animation loop to simulate speech-like motion
@@ -925,7 +1012,7 @@ export default function HybridAvatarCalibrator() {
           >
             <option value="maya">Maya Ríos</option>
             <option value="otto">Prof. Otto Reinhardt</option>
-            <option value="sarah">Dr. Sarah Hayes</option>
+            <option value="sarah">Dr. Sarah Chen</option>
             <option value="marcus">Dr. Marcus Webb</option>
             <option value="jessica">Lt. Colonel Jessica Hayes</option>
           </select>
@@ -967,10 +1054,10 @@ export default function HybridAvatarCalibrator() {
           <div style={{ paddingTop: 8, display: 'grid', gridTemplateColumns: '1fr', gap: 8 }}>
             <fieldset>
               <legend>Head micro-movement</legend>
-              <div className="row"><label>Head sway amplitude (px)</label><input type="range" min={0} max={1.5} step={0.01} value={advancedAnimations.head.swayPx} onChange={e => setAdvancedAnimations({ ...advancedAnimations, head: { ...advancedAnimations.head, swayPx: parseFloat(e.target.value) } })} /><span>{advancedAnimations.head.swayPx.toFixed(2)}</span></div>
-              <div className="row"><label>Head tilt amplitude (deg)</label><input type="range" min={0} max={2.5} step={0.01} value={advancedAnimations.head.tiltDeg} onChange={e => setAdvancedAnimations({ ...advancedAnimations, head: { ...advancedAnimations.head, tiltDeg: parseFloat(e.target.value) } })} /><span>{advancedAnimations.head.tiltDeg.toFixed(2)}</span></div>
+              <div className="row"><label>Head sway amplitude (px)</label><input type="range" min={0} max={5.0} step={0.05} value={advancedAnimations.head.swayPx} onChange={e => setAdvancedAnimations({ ...advancedAnimations, head: { ...advancedAnimations.head, swayPx: parseFloat(e.target.value) } })} /><span>{advancedAnimations.head.swayPx.toFixed(2)}</span></div>
+              <div className="row"><label>Head tilt amplitude (deg)</label><input type="range" min={0} max={4.0} step={0.05} value={advancedAnimations.head.tiltDeg} onChange={e => setAdvancedAnimations({ ...advancedAnimations, head: { ...advancedAnimations.head, tiltDeg: parseFloat(e.target.value) } })} /><span>{advancedAnimations.head.tiltDeg.toFixed(2)}</span></div>
               <div className="row"><label>Emphasis nod threshold</label><input type="range" min={0.3} max={0.9} step={0.01} value={advancedAnimations.head.nodThreshold} onChange={e => setAdvancedAnimations({ ...advancedAnimations, head: { ...advancedAnimations.head, nodThreshold: parseFloat(e.target.value) } })} /><span>{advancedAnimations.head.nodThreshold.toFixed(2)}</span></div>
-              <div className="row"><label>Emphasis nod strength (deg)</label><input type="range" min={0} max={2.0} step={0.01} value={advancedAnimations.head.nodMaxDeg} onChange={e => setAdvancedAnimations({ ...advancedAnimations, head: { ...advancedAnimations.head, nodMaxDeg: parseFloat(e.target.value) } })} /><span>{advancedAnimations.head.nodMaxDeg.toFixed(2)}</span></div>
+              <div className="row"><label>Emphasis nod strength (deg)</label><input type="range" min={0} max={3.0} step={0.05} value={advancedAnimations.head.nodMaxDeg} onChange={e => setAdvancedAnimations({ ...advancedAnimations, head: { ...advancedAnimations.head, nodMaxDeg: parseFloat(e.target.value) } })} /><span>{advancedAnimations.head.nodMaxDeg.toFixed(2)}</span></div>
               <div className="row"><label>Transform origin Y (px)</label><input type="range" min={140} max={200} step={1} value={advancedAnimations.head.originY} onChange={e => setAdvancedAnimations({ ...advancedAnimations, head: { ...advancedAnimations.head, originY: parseFloat(e.target.value) } })} /><span>{advancedAnimations.head.originY.toFixed(0)}</span></div>
             </fieldset>
 

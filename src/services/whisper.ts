@@ -208,6 +208,10 @@ export async function recordAndTranscribe(
 /**
  * Start recording with Voice Activity Detection (VAD)
  * Automatically stops when user stops speaking
+ * @param options.maxDurationMs - Maximum recording duration (default: 30000ms)
+ * @param options.silenceThresholdMs - Duration of silence before auto-stopping (default: 1500ms, recommended: 2000ms for natural pauses)
+ * @param options.onSpeechStart - Callback when speech is detected
+ * @param options.onSpeechEnd - Callback when speech ends
  */
 export function startRecordingWithVAD(options?: {
   maxDurationMs?: number;
@@ -219,7 +223,7 @@ export function startRecordingWithVAD(options?: {
   cancel: () => void;
 } {
   const maxDuration = options?.maxDurationMs || 30000; // 30 seconds max
-  const silenceThreshold = options?.silenceThresholdMs || 1500; // 1.5 seconds of silence
+  const silenceThreshold = options?.silenceThresholdMs || 1500; // Default 1.5 seconds (can be increased for natural pauses)
 
   let mediaRecorder: MediaRecorder | null = null;
   let stream: MediaStream | null = null;

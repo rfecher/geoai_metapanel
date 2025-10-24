@@ -179,8 +179,8 @@ CRITICAL OUTPUT FORMAT REQUIREMENTS:
       headOriginYPx: 170,
       gazeEnabled: true,
       gazeIntervalSec: 5,
-      gazeLateralPx: 5,
-      gazeVerticalPx: 1.8,
+      gazeLateralPx: 4,
+      gazeVerticalPx: 1.2,
       lidCoupleThresholdPx: 3,
       dilationEnabled: true,
       dilationRangeLPx: 0.3,
@@ -236,7 +236,7 @@ CRITICAL OUTPUT FORMAT REQUIREMENTS:
   },
   {
     id: 'sarah',
-    name: 'Dr. Sarah Hayes',
+    name: 'Dr. Sarah Chen',
     shortBio: 'Mozilla Foundation principal research scientist; open geospatial AI advocate and community organizer.',
     color: '#059669',
     avatarInitials: 'SH',
@@ -252,7 +252,7 @@ CRITICAL OUTPUT FORMAT REQUIREMENTS:
             "heightPct": 12
         }
     },
-    imagePrompt: 'Professional headshot of Dr. Sarah Hayes, East Asian woman in her mid 30s with light-medium skin tone, straight black shoulder-length hair, optional thin-frame glasses, almond eyes, subtle natural makeup, friendly intelligent expression. Mouth relaxed and closed, no visible teeth; subtle closed-mouth smile only. Neutral soft gray background, soft key and gentle fill, 50–85mm portrait lens, shallow depth of field. Business-casual blazer or knit top; tech/researcher vibe. Photorealistic, clean color, sharp facial detail, no excessive skin smoothing.',
+    imagePrompt: 'Professional headshot of Dr. Sarah Chen, East Asian woman in her mid 30s with light-medium skin tone, straight black shoulder-length hair, optional thin-frame glasses, almond eyes, subtle natural makeup, friendly intelligent expression. Mouth relaxed and closed, no visible teeth; subtle closed-mouth smile only. Neutral soft gray background, soft key and gentle fill, 50–85mm portrait lens, shallow depth of field. Business-casual blazer or knit top; tech/researcher vibe. Photorealistic, clean color, sharp facial detail, no excessive skin smoothing.',
     ttsVoiceId: 'en_US-kathleen-low', // Piper: friendly, energetic female
     animationConfig: {
       mouthScale: 0.9,
@@ -271,16 +271,16 @@ CRITICAL OUTPUT FORMAT REQUIREMENTS:
       headOriginYPx: 170,
       gazeEnabled: true,
       gazeIntervalSec: 3.8,
-      gazeLateralPx: 4.5,
-      gazeVerticalPx: 3,
+      gazeLateralPx: 3.5,
+      gazeVerticalPx: 1.5,
       lidCoupleThresholdPx: 3,
       dilationEnabled: true,
       dilationRangeLPx: 0.4,
       dilationRangeRPx: 0.4,
       dilationPeriodSec: 10,
     },
-    intro: "Hi everyone! Sarah Hayes here, Principal Research Scientist at Mozilla Foundation. I spent years at Google working on Earth Engine before moving to open source. I'm passionate about building transparent, community-driven geospatial AI tools that anyone can use, audit, and improve. Looking forward to this discussion!",
-    systemPrompt: `You are Dr. Sarah Hayes — Principal Research Scientist, Mozilla Foundation.
+    intro: "Hi everyone! Sarah Chen here, Principal Research Scientist at Mozilla Foundation. I spent years at Google working on Earth Engine before moving to open source. I'm passionate about building transparent, community-driven geospatial AI tools that anyone can use, audit, and improve. Looking forward to this discussion!",
+    systemPrompt: `You are Dr. Sarah Chen — Principal Research Scientist, Mozilla Foundation.
 
 Background:
 - 8 years at Google working on Earth Engine; left over conflicts about military contracts and data access.
@@ -355,15 +355,15 @@ CRITICAL OUTPUT FORMAT REQUIREMENTS:
       breatheScale: 1.05,
       swayScale: 0.85,
       speakingGlow: 0.6,
-      headSwayPx: 0.45,
-      headTiltDeg: 0.9,
+      headSwayPx: 2.5,
+      headTiltDeg: 1.8,
       nodThreshold: 0.65,
-      nodMaxDeg: 0.9,
+      nodMaxDeg: 1.5,
       headOriginYPx: 170,
       gazeEnabled: true,
       gazeIntervalSec: 4.2,
-      gazeLateralPx: 6.5,
-      gazeVerticalPx: 2.5,
+      gazeLateralPx: 4,
+      gazeVerticalPx: 2,
       lidCoupleThresholdPx: 3,
       dilationEnabled: true,
       dilationRangeLPx: 0.4,

@@ -29,7 +29,7 @@ After:   Each persona → Different random model
 ```
 Maya Ríos        → deepseek-r1:7b
 Prof. Otto       → llama-3.1-8b-instruct
-Dr. Sarah Hayes   → gemma-2-9b-it
+Dr. Sarah Chen   → gemma-2-9b-it
 Dr. Marcus Webb  → mistral-7b-instruct
 Lt. Col. Park    → qwen2.5-7b-instruct
 ```
@@ -242,7 +242,7 @@ Maya Ríos        [________________________]
 
 Maya Ríos        → deepseek-r1:7b
 Prof. Otto       → llama-3.1-8b-instruct
-Dr. Sarah Hayes   → gemma-2-9b-it
+Dr. Sarah Chen   → gemma-2-9b-it
 Dr. Marcus Webb  → mistral-7b-instruct
 Lt. Col. Park    → qwen2.5-7b-instruct
 ```
@@ -253,7 +253,7 @@ Lt. Col. Park    → qwen2.5-7b-instruct
 
 Maya Ríos        → gemma-2-9b-it
 Prof. Otto       → llama-3.1-8b-instruct
-Dr. Sarah Hayes   → mistral-7b-instruct
+Dr. Sarah Chen   → mistral-7b-instruct
 Dr. Marcus Webb  → gemma-2-9b-it        (same as Maya)
 Lt. Col. Park    → llama-3.1-8b-instruct (same as Otto)
 ```
@@ -264,7 +264,7 @@ Lt. Col. Park    → llama-3.1-8b-instruct (same as Otto)
 
 Maya Ríos        → llama-3.1-8b-instruct
 Prof. Otto       → llama-3.1-8b-instruct
-Dr. Sarah Hayes   → llama-3.1-8b-instruct
+Dr. Sarah Chen   → llama-3.1-8b-instruct
 Dr. Marcus Webb  → llama-3.1-8b-instruct
 Lt. Col. Park    → llama-3.1-8b-instruct
 ```

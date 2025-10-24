@@ -55,7 +55,7 @@
   <!-- Rig root: transforms applied here for head motion; origin near neck/upper chest -->
   <g id="rigRoot" clip-path="url(#avatarClip)" style="transform-origin: 200px 170px; transform-box: view-box; transform: translate(0px, -0.362px) rotate(-0.045deg);">
     <!-- Photo base (realistic!) -->
-    <image href="/avatars/jessica.png" x="0" y="0" width="400" height="400" preserveAspectRatio="xMidYMid slice"></image>
+    <image href="/avatars/jessica-eyes.png" x="0" y="0" width="400" height="400" preserveAspectRatio="xMidYMid slice"></image>
 
     <!-- Eyes overlay (positions derived from faceAnchors: eyes y ≈ 33.33% of 400 = ~133px) -->
     <g id="eyes">

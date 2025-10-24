@@ -18,12 +18,15 @@
     </filter>
 
     <!-- Eyelid gradients: darker at lash line, fade to transparent across thickness -->
+    <!-- Increased opacity for more visible blinks: 0.85 -> 0.98 at lash line -->
     <linearGradient id="gradLidUpper" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#5f4033" stop-opacity="0.85"></stop>
+      <stop offset="0%" stop-color="#4a3028" stop-opacity="0.98"></stop>
+      <stop offset="60%" stop-color="#5f4033" stop-opacity="0.5"></stop>
       <stop offset="100%" stop-color="#5f4033" stop-opacity="0"></stop>
     </linearGradient>
     <linearGradient id="gradLidLower" x1="0" y1="1" x2="0" y2="0">
-      <stop offset="0%" stop-color="#5f4033" stop-opacity="0.85"></stop>
+      <stop offset="0%" stop-color="#4a3028" stop-opacity="0.98"></stop>
+      <stop offset="60%" stop-color="#5f4033" stop-opacity="0.5"></stop>
       <stop offset="100%" stop-color="#5f4033" stop-opacity="0"></stop>
     </linearGradient>
 
@@ -46,16 +49,29 @@
       <stop offset="100%" stop-color="#74413d" stop-opacity="0.76"></stop>
     </linearGradient>
 
+    <!-- Mouth cavity gradient: dark center fading outward for depth illusion -->
+    <radialGradient id="gradMouthCavity" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#0d0605" stop-opacity="0.98"></stop>
+      <stop offset="40%" stop-color="#1a0d0b" stop-opacity="0.92"></stop>
+      <stop offset="70%" stop-color="#2d1612" stop-opacity="0.6"></stop>
+      <stop offset="100%" stop-color="#2d1612" stop-opacity="0"></stop>
+    </radialGradient>
+
     <!-- Slightly stronger feather just for mouth edges -->
     <filter id="mouthFeather" x="-6%" y="-6%" width="112%" height="112%">
       <feGaussianBlur stdDeviation="0.55"></feGaussianBlur>
     </filter>
+
+    <!-- Softer blur for mouth cavity to enhance depth -->
+    <filter id="cavityBlur" x="-10%" y="-10%" width="120%" height="120%">
+      <feGaussianBlur stdDeviation="0.8"></feGaussianBlur>
+    </filter>
   </defs>
 
   <!-- Rig root: transforms applied here for head motion; origin near neck/upper chest -->
-  <g id="rigRoot" clip-path="url(#avatarClip)" style="transform-origin: 200px 170px; transform-box: view-box; transform: translate(0px, 0.272px) rotate(-0.478deg);">
+  <g id="rigRoot" clip-path="url(#avatarClip)" style="transform-origin: 200px 170px; transform-box: view-box; transform: translate(0px, 0.495px) rotate(1.749deg);">
     <!-- Photo base (realistic!) -->
-    <image href="/avatars/marcus.png" x="0" y="0" width="400" height="400" preserveAspectRatio="xMidYMid slice"></image>
+    <image href="/avatars/marcus-eyes.png" x="0" y="0" width="400" height="400" preserveAspectRatio="xMidYMid slice"></image>
 
     <!-- Eyes overlay (positions derived from faceAnchors: eyes y ≈ 31.49% of 400 = ~126px) -->
     <g id="eyes">
@@ -64,8 +80,8 @@
       <ellipse id="eyeR" cx="221" cy="131" rx="14" ry="5" fill="url(#gradEye)" opacity="0.12" filter="url(#softShadow)"></ellipse>
 
       <!-- Pupils (kept small; you can animate gaze later by translating x/y slightly) -->
-      <circle id="pupilL" cx="164" cy="134" r="6" fill="url(#gradPupil)" opacity="0.9" filter="url(#softEdge)"></circle>
-      <circle id="pupilR" cx="221" cy="131" r="5" fill="url(#gradPupil)" opacity="0.9" filter="url(#softEdge)"></circle>
+      <circle id="pupilL" cx="164" cy="134" r="6" fill="url(#gradPupil)" opacity="0.9" filter="url(#softEdge)" style="transform-box: fill-box; transform: translate(var(--gazeDx, 0px), var(--gazeDy, 0px)); --gazeDx: 0px; --gazeDy: 0px;"></circle>
+      <circle id="pupilR" cx="221" cy="131" r="5" fill="url(#gradPupil)" opacity="0.9" filter="url(#softEdge)" style="transform-box: fill-box; transform: translate(var(--gazeDx, 0px), var(--gazeDy, 0px)); --gazeDx: 0px; --gazeDy: 0px;"></circle>
       <!-- Tiny corneal highlights -->
       <ellipse cx="161" cy="132.5" rx="1.1" ry="0.7" fill="#fff" opacity="0.18" filter="url(#softEdge)"></ellipse>
       <ellipse cx="218" cy="129.5" rx="1.0" ry="0.6" fill="#fff" opacity="0.18" filter="url(#softEdge)"></ellipse>
@@ -78,6 +94,9 @@
     </g>
 
     <!-- Mouth overlay (y ≈ 53.186% of 400 = ~212.7px). React updates rx/ry/cy/opacity for visemes. -->
+    <!-- Mouth cavity layer: provides depth when mouth opens -->
+    <ellipse id="mouthCavity" cx="193" cy="198.2" rx="17.1" ry="1.785" fill="url(#gradMouthCavity)" opacity="0" filter="url(#cavityBlur)" style="transition: opacity 100ms ease-out; opacity: 0.06;"></ellipse>
+    <!-- Mouth shape layer: the visible lip opening -->
     <ellipse id="mouthShape" cx="193" cy="197" rx="18" ry="1" fill="url(#gradMouthVert)" opacity="0.72" filter="url(#mouthFeather)" style="transition: opacity 100ms ease-out;"></ellipse>
   </g>
 </svg>

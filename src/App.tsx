@@ -4,7 +4,7 @@ import LLMProviderSelector from './components/LLMProviderSelector';
 import VideoConferenceLayout from './components/VideoConferenceLayout';
 import Settings from './components/Settings';
 import { personas } from './data/personas';
-import { chatWithLLM, LLMConfig, LLM_PRESETS, ChatMessage } from './services/llm';
+import { chatWithLLM, chatWithLLMStreaming, LLMConfig, LLM_PRESETS, ChatMessage } from './services/llm';
 
 import { ttsSpeak, ttsPreGenerate, ttsPlayPreGenerated, type TTSSettings, setTtsAmplitudeListener, setTtsVisemeListener, cancelCurrentSpeech } from './services/tts';
 // Import piper to ensure window.electron types are available
@@ -12,6 +12,7 @@ import './services/piper';
 import { startRecordingWithVAD, whisperTranscribe, whisperTest, type WhisperModel } from './services/whisper';
 import HybridAvatarCalibrator from './components/HybridAvatarCalibrator';
 import AvatarCalibrationTool from './components/AvatarCalibrationTool';
+import AcknowledgmentBubble, { getAcknowledgment } from './components/AcknowledgmentBubble';
 
 import { startLocalWakeWord, testLocalWakeWord, isLocalWakeWordSupported } from './services/localwakeword';
 type Msg = {
@@ -21,13 +22,30 @@ type Msg = {
   author: string;
   text: string;
   color: string;
+  isAcknowledgment?: boolean; // Flag for temporary acknowledgment messages
+  isStreaming?: boolean; // Flag for messages currently being streamed
 };
 
 let ttsChain: Promise<void> = Promise.resolve();
 
-function buildHistoryChat(messagesState: Msg[], maxItems = 20): ChatMessage[] {
+function buildHistoryChat(messagesState: Msg[], maxItems = 20, currentQuestionOnly = false): ChatMessage[] {
   // Convert prior UI messages to Ollama chat history
-  const tail = messagesState.slice(-maxItems);
+  // If currentQuestionOnly is true, only include responses from the current question
+  let tail: Msg[];
+
+  if (currentQuestionOnly) {
+    // Find the last user message and include only messages after it
+    const lastUserIndex = messagesState.findLastIndex(m => m.role === 'user');
+    if (lastUserIndex === -1) {
+      tail = [];
+    } else {
+      // Include only messages from the current question (excluding the user message itself)
+      tail = messagesState.slice(lastUserIndex + 1);
+    }
+  } else {
+    tail = messagesState.slice(-maxItems);
+  }
+
   const out: ChatMessage[] = [];
   for (const m of tail) {
     if (m.role === 'user') {
@@ -98,6 +116,14 @@ export default function App() {
     return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   });
   const [showCalibration, setShowCalibration] = useState(false);
+
+  // Conversation dynamics settings (Phase 1: Quick Wins)
+  const [showAcknowledgments, setShowAcknowledgments] = useState(true);
+  const [showTypingIndicators, setShowTypingIndicators] = useState(true);
+  const [enableListeningAnimations, setEnableListeningAnimations] = useState(true);
+
+  // Streaming settings (Phase 2: Streaming Responses)
+  const [enableStreaming, setEnableStreaming] = useState(true);
   // Temporary access: open ?calibrate=hybrid to load the hybrid avatar calibrator page
   const calibratePage = new URLSearchParams(window.location.search).get('calibrate');
   if (calibratePage === 'hybrid') {
@@ -290,6 +316,16 @@ export default function App() {
       if (typeof s.azureRegion === 'string') setAzureRegion(s.azureRegion);
       if (typeof s.azureKey === 'string') setAzureKey(s.azureKey);
       if (typeof s.elevenKey === 'string') setElevenKey(s.elevenKey);
+      // Load Whisper model preference
+      if (s.whisperModel === 'tiny.en' || s.whisperModel === 'base.en' || s.whisperModel === 'small.en' || s.whisperModel === 'medium.en') {
+        setWhisperModel(s.whisperModel);
+      }
+      // Load conversation dynamics settings
+      if (typeof s.showAcknowledgments === 'boolean') setShowAcknowledgments(s.showAcknowledgments);
+      if (typeof s.showTypingIndicators === 'boolean') setShowTypingIndicators(s.showTypingIndicators);
+      if (typeof s.enableListeningAnimations === 'boolean') setEnableListeningAnimations(s.enableListeningAnimations);
+      // Load streaming settings
+      if (typeof s.enableStreaming === 'boolean') setEnableStreaming(s.enableStreaming);
     } catch {}
   }, []);
   // Prefill Azure voices with recommended defaults per persona (non-destructive)
@@ -309,6 +345,42 @@ export default function App() {
     });
     if (changed) setPersonaVoices(merged);
   }, [ttsProvider]);
+
+  // Reactivate wake word detection after AI finishes speaking
+  useEffect(() => {
+    // Only reactivate if:
+    // 1. No one is currently speaking (speakingId is null)
+    // 2. AI is not busy processing (busy is false)
+    // 3. Not currently recording or transcribing
+    // 4. Wake word is supported but not currently enabled
+    // 5. Whisper is available
+    if (!speakingId && !busy && !isRecording && !isTranscribing &&
+        wakeWordSupported && !wakeWordEnabled && whisperAvailable && wakeWordAutoStarted) {
+      console.log('🎤 AI finished speaking and processing, reactivating wake word detection...');
+
+      // Use a timeout to ensure all state has settled
+      const timer = setTimeout(() => {
+        (async () => {
+          try {
+            const controller = await startLocalWakeWord(() => {
+              console.log('✅ Wake word detected! Starting voice input...');
+              if (onMicrophoneClickRef.current) {
+                onMicrophoneClickRef.current();
+              }
+            });
+            wakeWordControllerRef.current = controller;
+            setWakeWordEnabled(true);
+            console.log('👂 Wake word detection reactivated after AI response');
+          } catch (error) {
+            console.error('❌ Failed to reactivate wake word detection:', error);
+            setWakeWordError(error instanceof Error ? error.message : String(error));
+          }
+        })();
+      }, 500); // 500ms delay to ensure all state updates have completed
+
+      return () => clearTimeout(timer);
+    }
+  }, [speakingId, busy, isRecording, isTranscribing, wakeWordSupported, wakeWordEnabled, whisperAvailable, wakeWordAutoStarted]);
 
   const speakQueued = useCallback((text: string, personaId?: string, preGeneratedAudioPromise?: Promise<HTMLAudioElement | null>) => {
     const settings: TTSSettings = {
@@ -391,9 +463,25 @@ export default function App() {
   useEffect(() => {
     // For Piper, don't save personaVoices - always use persona definitions
     const voicesToSave = ttsProvider === 'piper' ? {} : personaVoices;
-    const s = { llmConfig, personaModels, contextSize, mode, ttsProvider, defaultVoice, personaVoices: voicesToSave, azureRegion, azureKey, elevenKey };
+    const s = {
+      llmConfig,
+      personaModels,
+      contextSize,
+      mode,
+      ttsProvider,
+      defaultVoice,
+      personaVoices: voicesToSave,
+      azureRegion,
+      azureKey,
+      elevenKey,
+      whisperModel,
+      showAcknowledgments,
+      showTypingIndicators,
+      enableListeningAnimations,
+      enableStreaming,
+    };
     try { localStorage.setItem('settings', JSON.stringify(s)); } catch {}
-  }, [llmConfig, personaModels, contextSize, mode, ttsProvider, defaultVoice, personaVoices, azureRegion, azureKey, elevenKey]);
+  }, [llmConfig, personaModels, contextSize, mode, ttsProvider, defaultVoice, personaVoices, azureRegion, azureKey, elevenKey, whisperModel, showAcknowledgments, showTypingIndicators, enableListeningAnimations, enableStreaming]);
 
 
   const scrollToEnd = useCallback(() => {
@@ -412,6 +500,14 @@ export default function App() {
         // The promise will be handled by the auto-handler set up when recording started
       }
     } else {
+      // Stop wake word detection while recording to avoid conflicts
+      if (wakeWordEnabled && wakeWordControllerRef.current) {
+        console.log('🎤 Stopping wake word detection during recording...');
+        await wakeWordControllerRef.current.stop();
+        wakeWordControllerRef.current = null;
+        setWakeWordEnabled(false);
+      }
+
       // Start recording with VAD
       console.log('🎤 Starting recording with VAD...');
       setIsRecording(true);
@@ -420,7 +516,7 @@ export default function App() {
       try {
         const controller = startRecordingWithVAD({
           maxDurationMs: 30000, // 30 seconds max
-          silenceThresholdMs: 1500, // 1.5 seconds of silence
+          silenceThresholdMs: 2000, // 2 seconds of silence to allow for natural pauses
           onSpeechStart: () => {
             console.log('🎤 Speech started');
             setIsSpeaking(true);
@@ -478,7 +574,7 @@ export default function App() {
         setIsSpeaking(false);
       }
     }
-  }, [isRecording, whisperModel]);
+  }, [isRecording, whisperModel, wakeWordEnabled]);
 
   // Store onMicrophoneClick in ref for use in callbacks
   useEffect(() => {
@@ -534,6 +630,78 @@ export default function App() {
     };
   }, []);
 
+  /**
+   * Helper class to handle sentence-based TTS for streaming responses
+   * Accumulates text and triggers TTS when complete sentences are detected
+   */
+  class StreamingTTSHandler {
+    private buffer = '';
+    private sentenceQueue: string[] = [];
+    private isProcessing = false;
+    private personaId: string;
+    private ttsSettings: TTSSettings;
+
+    constructor(personaId: string, ttsSettings: TTSSettings) {
+      this.personaId = personaId;
+      this.ttsSettings = ttsSettings;
+    }
+
+    /**
+     * Add a chunk of text and process any complete sentences
+     */
+    addChunk(chunk: string) {
+      this.buffer += chunk;
+      this.extractSentences();
+      this.processSentences();
+    }
+
+    /**
+     * Finalize - process any remaining text
+     */
+    finalize() {
+      if (this.buffer.trim()) {
+        this.sentenceQueue.push(this.buffer.trim());
+        this.buffer = '';
+      }
+      this.processSentences();
+    }
+
+    /**
+     * Extract complete sentences from buffer
+     */
+    private extractSentences() {
+      // Match sentences ending with . ! ? followed by space or end of string
+      const sentenceRegex = /[^.!?]+[.!?]+(?:\s|$)/g;
+      const matches = this.buffer.match(sentenceRegex);
+
+      if (matches) {
+        this.sentenceQueue.push(...matches.map(s => s.trim()));
+        // Remove extracted sentences from buffer
+        const lastMatch = matches[matches.length - 1];
+        const lastIndex = this.buffer.lastIndexOf(lastMatch) + lastMatch.length;
+        this.buffer = this.buffer.substring(lastIndex);
+      }
+    }
+
+    /**
+     * Process queued sentences for TTS
+     */
+    private async processSentences() {
+      if (this.isProcessing || this.sentenceQueue.length === 0) return;
+
+      this.isProcessing = true;
+      while (this.sentenceQueue.length > 0) {
+        const sentence = this.sentenceQueue.shift()!;
+        if (sentence.trim()) {
+          // Pre-generate and queue TTS for this sentence
+          const ttsPromise = ttsPreGenerate(sentence, this.ttsSettings, this.personaId);
+          speakQueued(sentence, this.personaId, ttsPromise);
+        }
+      }
+      this.isProcessing = false;
+    }
+  }
+
   const onSend = useCallback(async (questionOverride?: string) => {
     const question = (questionOverride || input).trim();
     if (!question || busy) return;
@@ -547,7 +715,20 @@ export default function App() {
     try {
       if (selectedPersonas.length === 0) return;
 
-      const baseHistory = buildHistoryChat(messages, contextSize);
+      // Build context from current question only to reduce repetition and keep focus
+      const baseHistory = buildHistoryChat(messages, contextSize, true);
+
+      // Randomize persona order for variety in who responds first
+      const shuffleArray = <T,>(array: T[]): T[] => {
+        const shuffled = [...array];
+        for (let i = shuffled.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+        }
+        return shuffled;
+      };
+
+      const randomizedPersonas = shuffleArray(selectedPersonas);
 
       if (mode === 'persona') {
         let history = baseHistory;
@@ -560,31 +741,111 @@ export default function App() {
           elevenApiKey: elevenKey,
         };
 
-        for (const p of selectedPersonas) {
-          const sys: ChatMessage = { role: 'system', content: `${p.systemPrompt}\n\nYou are one panelist among several. Build on previous panelists' points when helpful.` };
+        for (let i = 0; i < randomizedPersonas.length; i++) {
+          const p = randomizedPersonas[i];
+          const isFirstPersona = i === 0;
+
+          // Show acknowledgment message immediately if enabled (only for first persona)
+          let ackMsgId: string | undefined;
+          let acknowledgmentText: string | undefined;
+          if (showAcknowledgments && isFirstPersona) {
+            acknowledgmentText = getAcknowledgment(p.id);
+            ackMsgId = `m-${Date.now()}-${p.id}-ack`;
+            const ackMsg: Msg = {
+              id: ackMsgId,
+              role: 'assistant',
+              personaId: p.id,
+              author: p.name,
+              text: acknowledgmentText, // Store the text for consistency
+              color: p.color,
+              isAcknowledgment: true,
+            };
+            setMessages(prev => [...prev, ackMsg]);
+            scrollToEnd();
+
+            // Speak the acknowledgment immediately
+            speakQueued(acknowledgmentText, p.id);
+          }
+
+          const sys: ChatMessage = { role: 'system', content: `${p.systemPrompt}\n\nYou are one panelist among several. Focus primarily on answering the user's question directly with your unique perspective. Only reference another panelist's point if you have a strong agreement or disagreement with something specific they said. Use your background as inspiration for creative, varied perspectives - don't repeatedly mention the same credentials or experiences. Keep your response concise and focused on the current question.` };
           const usedModel = personaModels[p.id] || llmConfig.defaultModel;
           const reqMsgs: ChatMessage[] = [sys, ...history, { role: 'user', content: question }];
 
           console.log(`🤖 Requesting LLM response for ${p.name}...`);
-          // Wait for LLM response
-          const answer = await chatWithLLM(llmConfig, { model: usedModel, messages: reqMsgs });
-          console.log(`✅ Got LLM response for ${p.name}`);
 
-          const aMsg: Msg = { id: `m-${Date.now()}-${p.id}`, role: 'assistant', personaId: p.id, author: p.name, text: answer, color: p.color };
-          setMessages(prev => [...prev, aMsg]);
+          let answer = '';
 
-          scrollToEnd();
+          if (enableStreaming) {
+            // Streaming mode: display partial responses as they arrive
+            const msgId = `m-${Date.now()}-${p.id}`;
+            const streamingMsg: Msg = {
+              id: msgId,
+              role: 'assistant',
+              personaId: p.id,
+              author: p.name,
+              text: '',
+              color: p.color,
+              isStreaming: true,
+            };
 
-          // Start pre-generating TTS immediately in the background (don't await!)
-          // This returns a promise that will resolve when generation is complete
-          // The promise will be awaited later when it's time to speak
-          console.log(`🎬 Starting TTS pre-generation for ${p.name} RIGHT NOW (will run in background)`);
-          const ttsPromise = ttsPreGenerate(answer, ttsSettings, p.id);
-          console.log(`✨ TTS promise created for ${p.name}, generation has started`);
+            // Replace acknowledgment with empty streaming message, or add new message
+            if (ackMsgId) {
+              setMessages(prev => prev.map(m => m.id === ackMsgId ? streamingMsg : m));
+            } else {
+              setMessages(prev => [...prev, streamingMsg]);
+            }
+            scrollToEnd();
 
-          // Queue the speech with the promise - speakQueued will await it when it's this persona's turn
-          speakQueued(answer, p.id, ttsPromise);
-          console.log(`📝 Queued speech for ${p.name}, continuing to next speaker...`);
+            // Create TTS handler for sentence-based streaming
+            const ttsHandler = new StreamingTTSHandler(p.id, ttsSettings);
+
+            // Stream the response
+            answer = await chatWithLLMStreaming(llmConfig, { model: usedModel, messages: reqMsgs }, (chunk) => {
+              answer += chunk;
+              // Update the message with accumulated text
+              setMessages(prev => prev.map(m =>
+                m.id === msgId ? { ...m, text: answer } : m
+              ));
+              scrollToEnd();
+
+              // Process chunk for TTS
+              ttsHandler.addChunk(chunk);
+            });
+
+            // Finalize TTS
+            ttsHandler.finalize();
+
+            // Mark streaming as complete
+            setMessages(prev => prev.map(m =>
+              m.id === msgId ? { ...m, isStreaming: false } : m
+            ));
+
+            console.log(`✅ Got streaming LLM response for ${p.name}`);
+          } else {
+            // Non-streaming mode: wait for complete response
+            answer = await chatWithLLM(llmConfig, { model: usedModel, messages: reqMsgs });
+            console.log(`✅ Got LLM response for ${p.name}`);
+
+            const aMsg: Msg = { id: `m-${Date.now()}-${p.id}`, role: 'assistant', personaId: p.id, author: p.name, text: answer, color: p.color };
+
+            // Replace acknowledgment with actual response, or just add if no acknowledgment
+            if (ackMsgId) {
+              setMessages(prev => prev.map(m => m.id === ackMsgId ? aMsg : m));
+            } else {
+              setMessages(prev => [...prev, aMsg]);
+            }
+
+            scrollToEnd();
+
+            // Start pre-generating TTS immediately in the background
+            console.log(`🎬 Starting TTS pre-generation for ${p.name} RIGHT NOW (will run in background)`);
+            const ttsPromise = ttsPreGenerate(answer, ttsSettings, p.id);
+            console.log(`✨ TTS promise created for ${p.name}, generation has started`);
+
+            // Queue the speech with the promise
+            speakQueued(answer, p.id, ttsPromise);
+            console.log(`📝 Queued speech for ${p.name}, continuing to next speaker...`);
+          }
 
           history = [...history, { role: 'assistant', content: `${p.name}: ${answer}` }];
         }
@@ -601,38 +862,145 @@ export default function App() {
           elevenApiKey: elevenKey,
         };
 
-        const requests = selectedPersonas.map(p => {
-          const sys: ChatMessage = { role: 'system', content: `${p.systemPrompt}\n\nYou are one panelist among several.` };
-          const usedModel = personaModels[p.id] || llmConfig.defaultModel;
-          const reqMsgs: ChatMessage[] = [sys, ...baseHistory, { role: 'user', content: question }];
-          return { p, usedModel, promise: chatWithLLM(llmConfig, { model: usedModel, messages: reqMsgs }) };
-        });
+        // Show acknowledgment message immediately for a random persona if enabled
+        const ackMsgIds: Record<string, string> = {};
+        let acknowledgmentText: string | undefined;
+        if (showAcknowledgments && randomizedPersonas.length > 0) {
+          const randomPersona = randomizedPersonas[0]; // Use first from randomized list
+          acknowledgmentText = getAcknowledgment(randomPersona.id);
+          const ackMsgId = `m-${Date.now()}-${randomPersona.id}-ack`;
+          ackMsgIds[randomPersona.id] = ackMsgId;
+
+          const ackMsg: Msg = {
+            id: ackMsgId,
+            role: 'assistant' as const,
+            personaId: randomPersona.id,
+            author: randomPersona.name,
+            text: acknowledgmentText,
+            color: randomPersona.color,
+            isAcknowledgment: true,
+          };
+          setMessages(prev => [...prev, ackMsg]);
+          scrollToEnd();
+
+          // Speak the acknowledgment immediately
+          speakQueued(acknowledgmentText, randomPersona.id);
+        }
 
         const initialAnswers: Record<string, string> = {};
         const completionOrder: string[] = [];
 
-        // Process each response as it completes - fully non-blocking
-        const responsePromises = requests.map(({ p, promise }) =>
-          promise.then(answer => {
+        if (enableStreaming) {
+          // Streaming mode: stream responses as they arrive
+          let firstResponseStarted = false;
+
+          const responsePromises = selectedPersonas.map(async (p) => {
+            const sys: ChatMessage = { role: 'system', content: `${p.systemPrompt}\n\nYou are one panelist among several. Focus on answering the user's question directly with your unique perspective. Use your background as inspiration for creative, varied insights - don't repeatedly mention the same credentials. Keep your response concise and focused.` };
+            const usedModel = personaModels[p.id] || llmConfig.defaultModel;
+            const reqMsgs: ChatMessage[] = [sys, ...baseHistory, { role: 'user', content: question }];
+
+            const msgId = `m-${Date.now()}-${p.id}`;
+            let answer = '';
+            let messageCreated = false;
+
+            // Create TTS handler for sentence-based streaming
+            const ttsHandler = new StreamingTTSHandler(p.id, ttsSettings);
+
+            // Stream the response
+            answer = await chatWithLLMStreaming(llmConfig, { model: usedModel, messages: reqMsgs }, (chunk) => {
+              answer += chunk;
+
+              if (!messageCreated) {
+                // First chunk - create the streaming message
+                const streamingMsg: Msg = {
+                  id: msgId,
+                  role: 'assistant',
+                  personaId: p.id,
+                  author: p.name,
+                  text: answer,
+                  color: p.color,
+                  isStreaming: true,
+                };
+
+                // Replace acknowledgment if this is the first persona, otherwise add new message
+                const ackMsgId = ackMsgIds[p.id];
+                if (ackMsgId) {
+                  setMessages(prev => prev.map(m => m.id === ackMsgId ? streamingMsg : m));
+                } else {
+                  setMessages(prev => [...prev, streamingMsg]);
+                }
+                messageCreated = true;
+                firstResponseStarted = true;
+              } else {
+                // Update existing message with accumulated text
+                setMessages(prev => prev.map(m =>
+                  m.id === msgId ? { ...m, text: answer } : m
+                ));
+              }
+              scrollToEnd();
+
+              // Process chunk for TTS
+              ttsHandler.addChunk(chunk);
+            });
+
+            // Finalize TTS
+            ttsHandler.finalize();
+
+            // Mark streaming as complete
+            setMessages(prev => prev.map(m =>
+              m.id === msgId ? { ...m, isStreaming: false } : m
+            ));
+
             initialAnswers[p.id] = answer;
             completionOrder.push(p.id);
-
-            // Update UI immediately when this response completes
-            const aMsg: Msg = { id: `m-${Date.now()}-${p.id}`, role: 'assistant', personaId: p.id, author: p.name, text: answer, color: p.color };
-            setMessages(prev => [...prev, aMsg]);
             setInFlight(prev => { const n = new Set(prev); n.delete(p.id); return n; });
             scrollToEnd();
 
-            // Start pre-generating TTS in background and queue it immediately
-            const ttsPromise = ttsPreGenerate(answer, ttsSettings, p.id);
-            speakQueued(answer, p.id, ttsPromise);
-
             return { personaId: p.id, answer };
-          })
-        );
+          });
 
-        // Wait for all initial responses before doing addendums
-        await Promise.all(responsePromises);
+          // Wait for all initial responses before doing addendums
+          await Promise.all(responsePromises);
+        } else {
+          // Non-streaming mode: original fastest-first behavior
+          const requests = selectedPersonas.map(p => {
+            const sys: ChatMessage = { role: 'system', content: `${p.systemPrompt}\n\nYou are one panelist among several. Focus on answering the user's question directly with your unique perspective. Use your background as inspiration for creative, varied insights - don't repeatedly mention the same credentials. Keep your response concise and focused.` };
+            const usedModel = personaModels[p.id] || llmConfig.defaultModel;
+            const reqMsgs: ChatMessage[] = [sys, ...baseHistory, { role: 'user', content: question }];
+            return { p, usedModel, promise: chatWithLLM(llmConfig, { model: usedModel, messages: reqMsgs }) };
+          });
+
+          // Process each response as it completes - fully non-blocking
+          const responsePromises = requests.map(({ p, promise }) =>
+            promise.then(answer => {
+              initialAnswers[p.id] = answer;
+              completionOrder.push(p.id);
+
+              // Update UI immediately when this response completes
+              const aMsg: Msg = { id: `m-${Date.now()}-${p.id}`, role: 'assistant', personaId: p.id, author: p.name, text: answer, color: p.color };
+
+              // Replace acknowledgment with actual response, or just add if no acknowledgment
+              const ackMsgId = ackMsgIds[p.id];
+              if (ackMsgId) {
+                setMessages(prev => prev.map(m => m.id === ackMsgId ? aMsg : m));
+              } else {
+                setMessages(prev => [...prev, aMsg]);
+              }
+
+              setInFlight(prev => { const n = new Set(prev); n.delete(p.id); return n; });
+              scrollToEnd();
+
+              // Start pre-generating TTS in background and queue it immediately
+              const ttsPromise = ttsPreGenerate(answer, ttsSettings, p.id);
+              speakQueued(answer, p.id, ttsPromise);
+
+              return { personaId: p.id, answer };
+            })
+          );
+
+          // Wait for all initial responses before doing addendums
+          await Promise.all(responsePromises);
+        }
 
         // Addendums in persona order, each referencing others' points
         for (const p of selectedPersonas) {
@@ -642,29 +1010,33 @@ export default function App() {
             .filter(Boolean);
           if (others.length === 0) continue;
 
-          const sys: ChatMessage = { role: 'system', content: `${p.systemPrompt}\n\nProvide a brief addendum (1–2 sentences) responding to the panel so far.` };
+          const sys: ChatMessage = { role: 'system', content: `${p.systemPrompt}\n\nOnly provide a brief addendum (1-2 sentences) if you have a strong agreement or disagreement with a specific point made by another panelist. Otherwise, respond with "SKIP" to indicate you have nothing to add.` };
           const usedModel = personaModels[p.id] || llmConfig.defaultModel;
           const addReq: ChatMessage[] = [
 
             sys,
             ...baseHistory,
             { role: 'assistant', content: `Panel so far:\n${others.join('\n')}` },
-            { role: 'user', content: 'Give a concise addendum (1–2 sentences) acknowledging or refining your point.' }
+            { role: 'user', content: 'If you have a strong reaction to a specific point made by another panelist, give a concise addendum (1-2 sentences). Otherwise, respond with exactly "SKIP".' }
           ];
           const addendum = await chatWithLLM(llmConfig, { model: usedModel, messages: addReq });
-          const addMsg: Msg = { id: `m-${Date.now()}-${p.id}-add`, role: 'assistant', personaId: p.id, author: p.name, text: addendum, color: p.color };
-          setMessages(prev => [...prev, addMsg]);
-          scrollToEnd();
 
-          // Start pre-generating TTS for addendum in background
-          const ttsPromise = ttsPreGenerate(addendum, ttsSettings, p.id);
-          speakQueued(addendum, p.id, ttsPromise);
+          // Only add the addendum if it's not "SKIP"
+          if (addendum.trim().toUpperCase() !== 'SKIP') {
+            const addMsg: Msg = { id: `m-${Date.now()}-${p.id}-add`, role: 'assistant', personaId: p.id, author: p.name, text: addendum, color: p.color };
+            setMessages(prev => [...prev, addMsg]);
+            scrollToEnd();
+
+            // Start pre-generating TTS for addendum in background
+            const ttsPromise = ttsPreGenerate(addendum, ttsSettings, p.id);
+            speakQueued(addendum, p.id, ttsPromise);
+          }
         }
       }
     } finally {
       setBusy(false);
     }
-  }, [input, busy, selectedPersonas, llmConfig, personaModels, scrollToEnd]);
+  }, [input, busy, selectedPersonas, llmConfig, personaModels, scrollToEnd, showAcknowledgments, ttsProvider, defaultVoice, personaVoices, azureRegion, azureKey, elevenKey, mode, messages, contextSize, enableStreaming]);
 
   // Store onSend in ref for use in callbacks
   useEffect(() => {
@@ -701,6 +1073,7 @@ export default function App() {
         busy={busy}
         generatedAvatars={generatedAvatars}
         useGeneratedAvatars={useGeneratedAvatars}
+        enableListeningAnimations={enableListeningAnimations}
       />
 
       {/* Skip button overlay when someone is speaking */}
@@ -898,6 +1271,58 @@ export default function App() {
             </label>
           </div>
 
+          {/* Conversation Dynamics Settings */}
+          <div className="label" style={{ marginTop: 16, fontWeight: 700 }}>💬 Conversation Dynamics</div>
+          <div className="tip">Enhance conversational flow and responsiveness</div>
+
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={showAcknowledgments}
+              onChange={e => setShowAcknowledgments(e.target.checked)}
+            />
+            <span>Show acknowledgment messages</span>
+          </label>
+          <div className="tip" style={{ marginLeft: 24 }}>
+            Display immediate acknowledgments (e.g., "Let me think...") while generating responses
+          </div>
+
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={showTypingIndicators}
+              onChange={e => setShowTypingIndicators(e.target.checked)}
+            />
+            <span>Show typing indicators</span>
+          </label>
+          <div className="tip" style={{ marginLeft: 24 }}>
+            Display animated typing dots with persona-specific styles
+          </div>
+
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={enableListeningAnimations}
+              onChange={e => setEnableListeningAnimations(e.target.checked)}
+            />
+            <span>Enable listening animations</span>
+          </label>
+          <div className="tip" style={{ marginLeft: 24 }}>
+            Non-speaking avatars show subtle engagement animations (nods, blinks)
+          </div>
+
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={enableStreaming}
+              onChange={e => setEnableStreaming(e.target.checked)}
+            />
+            <span>Enable streaming responses</span>
+          </label>
+          <div className="tip" style={{ marginLeft: 24 }}>
+            Display LLM responses incrementally as they arrive (reduces perceived latency)
+          </div>
+
           {/* Whisper STT Settings */}
           <div className="label" style={{ marginTop: 16, fontWeight: 700 }}>🎤 Voice Input (Whisper STT)</div>
           {whisperAvailable ? (
@@ -1092,6 +1517,13 @@ export default function App() {
         )}
         {messages.map(m => {
           const p = m.personaId ? personas.find(x => x.id === m.personaId) : undefined;
+
+          // Render acknowledgment bubble for acknowledgment messages
+          if (m.isAcknowledgment && p) {
+            return <AcknowledgmentBubble key={m.id} persona={p} isUser={false} showTypingIndicator={showTypingIndicators} acknowledgmentText={m.text} />;
+          }
+
+          // Render normal message bubble
           return (
             <MessageBubble
               key={m.id}
@@ -1099,7 +1531,7 @@ export default function App() {
               avatarText={m.role === 'user' ? 'YOU' : (p?.avatarInitials ?? 'AI')}
               avatarUrl={m.role === 'user' ? undefined : p?.imageUrl}
               color={m.color}
-              text={m.text}
+              text={m.isStreaming ? m.text + '▊' : m.text} // Add cursor for streaming messages
               isUser={m.role === 'user'}
             />
           );

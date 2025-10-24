@@ -53,9 +53,9 @@
   </defs>
 
   <!-- Rig root: transforms applied here for head motion; origin near neck/upper chest -->
-  <g id="rigRoot" clip-path="url(#avatarClip)" style="transform-origin: 200px 170px; transform-box: view-box; transform: translate(0px, 0.337px) rotate(-0.635deg);">
+  <g id="rigRoot" clip-path="url(#avatarClip)" style="transform-origin: 200px 170px; transform-box: view-box; transform: translate(0px, -0.134px) rotate(-0.617deg);">
     <!-- Photo base (realistic!) -->
-    <image href="/avatars/otto.png" x="0" y="0" width="400" height="400" preserveAspectRatio="xMidYMid slice"></image>
+    <image href="/avatars/otto-eyes.png" x="0" y="0" width="400" height="400" preserveAspectRatio="xMidYMid slice"></image>
 
     <!-- Eyes overlay (positions derived from faceAnchors: eyes y ≈ 33.33% of 400 = ~133px) -->
     <g id="eyes">
@@ -64,8 +64,8 @@
       <ellipse id="eyeR" cx="245" cy="166" rx="14" ry="5" fill="url(#gradEye)" opacity="0.12" filter="url(#softShadow)"></ellipse>
 
       <!-- Pupils (kept small; you can animate gaze later by translating x/y slightly) -->
-      <circle id="pupilL" cx="173" cy="166" r="7" fill="url(#gradPupil)" opacity="0.9" filter="url(#softEdge)"></circle>
-      <circle id="pupilR" cx="242" cy="164" r="7" fill="url(#gradPupil)" opacity="0.9" filter="url(#softEdge)"></circle>
+      <circle id="pupilL" cx="173" cy="166" r="7" fill="url(#gradPupil)" opacity="0.9" filter="url(#softEdge)" style="transform-box: fill-box; transform: translate(var(--gazeDx, 0px), var(--gazeDy, 0px)); --gazeDx: 0px; --gazeDy: 0px; transition: transform 452.304ms cubic-bezier(0.2, 0, 0.2, 1);"></circle>
+      <circle id="pupilR" cx="245" cy="165" r="7" fill="url(#gradPupil)" opacity="0.9" filter="url(#softEdge)" style="transform-box: fill-box; transform: translate(var(--gazeDx, 0px), var(--gazeDy, 0px)); --gazeDx: 0px; --gazeDy: 0px; transition: transform 452.304ms cubic-bezier(0.2, 0, 0.2, 1);"></circle>
       <!-- Tiny corneal highlights -->
       <ellipse cx="162" cy="131.5" rx="1.1" ry="0.7" fill="#fff" opacity="0.18" filter="url(#softEdge)"></ellipse>
       <ellipse cx="222" cy="131.5" rx="1.0" ry="0.6" fill="#fff" opacity="0.18" filter="url(#softEdge)"></ellipse>

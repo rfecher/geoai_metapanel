@@ -9,6 +9,7 @@ type Props = {
   className?: string;
   svgUrl: string; // inline this SVG for DOM control
   isSpeaking?: boolean;
+  isListening?: boolean; // NEW: Show subtle engagement animations when not speaking
   audioAmplitude?: number; // 0..1
   visemePose?: VisemePose;
   animationConfig?: {
@@ -20,10 +21,10 @@ type Props = {
     blinkRateSec?: number;
     blinkJitterPct?: number;
     // New: head micro-movement
-    headSwayPx?: number;        // 0..1.5 (default 0.45)
-    headTiltDeg?: number;       // 0..2.5 (default 0.9)
+    headSwayPx?: number;        // 0..5.0 (default 2.5) - increased for more visible movement
+    headTiltDeg?: number;       // 0..4.0 (default 1.8) - increased for more visible rotation
     nodThreshold?: number;      // 0.3..0.9 (default 0.65)
-    nodMaxDeg?: number;         // 0..2.0 (default 0.9)
+    nodMaxDeg?: number;         // 0..3.0 (default 1.5) - increased for more visible nods
     headOriginYPx?: number;     // 140..200 (default 170)
     // New: gaze shifts
     gazeEnabled?: boolean;      // default true
@@ -46,6 +47,7 @@ export default function SvgAnimatedAvatar({
   className = '',
   svgUrl,
   isSpeaking = false,
+  isListening = false,
   audioAmplitude = 0,
   visemePose,
   animationConfig,
@@ -53,6 +55,7 @@ export default function SvgAnimatedAvatar({
   const containerRef = useRef<HTMLDivElement>(null);
   const [svgMarkup, setSvgMarkup] = useState<string | null>(null);
   const [blink, setBlink] = useState(false);
+  const [listeningNod, setListeningNod] = useState(0); // Trigger for listening nods
 
   // Load the SVG markup and inline it
   useEffect(() => {
@@ -74,11 +77,11 @@ export default function SvgAnimatedAvatar({
     maxOpen: animationConfig?.maxOpen ?? 1,
     blinkRateSec: animationConfig?.blinkRateSec ?? 4,
     blinkJitterPct: animationConfig?.blinkJitterPct ?? 0.5,
-    // Head
-    headSwayPx: Math.max(0, Math.min(1.5, animationConfig?.headSwayPx ?? 0.45)),
-    headTiltDeg: Math.max(0, Math.min(2.5, animationConfig?.headTiltDeg ?? 0.9)),
+    // Head - INCREASED defaults for more visible movement
+    headSwayPx: Math.max(0, Math.min(5.0, animationConfig?.headSwayPx ?? 2.5)),
+    headTiltDeg: Math.max(0, Math.min(4.0, animationConfig?.headTiltDeg ?? 1.8)),
     nodThreshold: Math.max(0.3, Math.min(0.9, animationConfig?.nodThreshold ?? 0.65)),
-    nodMaxDeg: Math.max(0, Math.min(2.0, animationConfig?.nodMaxDeg ?? 0.9)),
+    nodMaxDeg: Math.max(0, Math.min(3.0, animationConfig?.nodMaxDeg ?? 1.5)),
     headOriginYPx: Math.max(140, Math.min(200, animationConfig?.headOriginYPx ?? 170)),
     // Gaze
     gazeEnabled: animationConfig?.gazeEnabled ?? true,
@@ -123,10 +126,29 @@ export default function SvgAnimatedAvatar({
     return () => clearTimeout(timer);
   }, [cfg.blinkRateSec, cfg.blinkJitterPct]);
 
+  // Listening animation scheduler - occasional nods when listening but not speaking
+  useEffect(() => {
+    if (!isListening || isSpeaking) return;
+
+    let timer: any;
+    const schedule = () => {
+      // Random interval between 3-8 seconds for listening nods
+      const delay = 3000 + Math.random() * 5000;
+      timer = setTimeout(() => {
+        // Trigger a subtle nod by incrementing the counter
+        setListeningNod(prev => prev + 1);
+        schedule();
+      }, delay);
+    };
+    schedule();
+    return () => clearTimeout(timer);
+  }, [isListening, isSpeaking]);
+
   // After the SVG is inlined, cache element refs
   const refs = useRef<{
     rigRoot?: SVGGElement;
     mouth?: SVGEllipseElement;
+    mouthCavity?: SVGEllipseElement;
     lidUL?: SVGRectElement; lidLL?: SVGRectElement; lidUR?: SVGRectElement; lidLR?: SVGRectElement;
     pupilL?: SVGCircleElement; pupilR?: SVGCircleElement;
     eyeL?: SVGEllipseElement; eyeR?: SVGEllipseElement;
@@ -148,6 +170,7 @@ export default function SvgAnimatedAvatar({
 
     const rigRoot = svg.querySelector('#rigRoot') as SVGGElement | undefined;
     const mouth = svg.querySelector('#mouthShape') as SVGEllipseElement | undefined;
+    const mouthCavity = svg.querySelector('#mouthCavity') as SVGEllipseElement | undefined;
     const lidUL = svg.querySelector('#lidUpperL') as SVGRectElement | undefined;
     const lidLL = svg.querySelector('#lidLowerL') as SVGRectElement | undefined;
     const lidUR = svg.querySelector('#lidUpperR') as SVGRectElement | undefined;
@@ -157,7 +180,7 @@ export default function SvgAnimatedAvatar({
     const eyeL = svg.querySelector('#eyeL') as SVGEllipseElement | undefined;
     const eyeR = svg.querySelector('#eyeR') as SVGEllipseElement | undefined;
 
-    refs.current = { rigRoot, mouth, lidUL, lidLL, lidUR, lidLR, pupilL, pupilR, eyeL, eyeR };
+    refs.current = { rigRoot, mouth, mouthCavity, lidUL, lidLL, lidUR, lidLR, pupilL, pupilR, eyeL, eyeR };
 
     console.log('[SvgAnimatedAvatar] Refs populated:', {
       hasPupilL: !!pupilL,
@@ -216,15 +239,32 @@ export default function SvgAnimatedAvatar({
     r.mouth.setAttribute('ry', String(ry));
     r.mouth.setAttribute('cy', String(baseCy + lipOpen * 6));
     (r.mouth.style as any).transition = 'opacity 120ms ease-out';
-  r.mouth.style.opacity = String(Math.min(0.9, (r.baseMouth?.opacity ?? 0.7) + lipOpen * 0.1));
+    r.mouth.style.opacity = String(Math.min(0.9, (r.baseMouth?.opacity ?? 0.7) + lipOpen * 0.1));
+
+    // Drive mouth cavity for depth effect (becomes visible when mouth opens)
+    if (r.mouthCavity) {
+      // Cavity is slightly smaller and positioned to create depth illusion
+      const cavityRx = rx * 0.75; // 75% of mouth width
+      const cavityRy = Math.max(0.5, ry * 0.85); // 85% of mouth height, min 0.5
+      r.mouthCavity.setAttribute('rx', String(cavityRx));
+      r.mouthCavity.setAttribute('ry', String(cavityRy));
+      r.mouthCavity.setAttribute('cy', String(baseCy + lipOpen * 6));
+
+      // Cavity opacity increases with mouth opening (lowered threshold to 0.10 for earlier visibility)
+      // Peak opacity increased to 0.90 for more prominent depth effect
+      // Increased multiplier to 1.5 for faster opacity ramp-up
+      const cavityOpacity = lipOpen < 0.10 ? 0 : Math.min(0.90, (lipOpen - 0.10) * 1.5);
+      (r.mouthCavity.style as any).transition = 'opacity 120ms ease-out';
+      r.mouthCavity.style.opacity = String(cavityOpacity);
+    }
   }, [lipOpen, lipWide, lipRound]);
 
   // Drive blink with natural two-phase timing and easing
   useEffect(() => {
     const r = refs.current; if (!r) return;
-    const closeDur = 90;   // fast close
-    const holdDur = 40;    // tiny hold
-    const openDur = 130;   // slower open
+    const closeDur = 85;   // fast close (slightly faster for more snap)
+    const holdDur = 45;    // tiny hold
+    const openDur = 140;   // slower open (slightly slower for natural ease)
 
     const applyPhase = (factor: number, easing: string) => {
       const set = (el?: SVGRectElement, origin: 'top' | 'bottom' = 'top') => {
@@ -232,22 +272,24 @@ export default function SvgAnimatedAvatar({
         el.style.transformOrigin = origin === 'top' ? '50% 0%' : '50% 100%';
         el.style.transition = `transform ${blink ? closeDur : openDur}ms ${easing}, opacity ${blink ? closeDur : openDur}ms ${easing}`;
         el.style.transform = `scaleY(${factor})`;
-        el.style.opacity = factor > 0.5 ? '0.8' : '0';
+        // Increased opacity from 0.8 to 0.95 for much more visible blinks
+        // Use a gradient: full opacity when fully closed, fade out as opening
+        el.style.opacity = factor > 0.7 ? '0.95' : (factor > 0.3 ? '0.6' : '0');
       };
       set(r.lidUL, 'top'); set(r.lidUR, 'top');
       set(r.lidLL, 'bottom'); set(r.lidLR, 'bottom');
     };
 
     if (blink) {
-      // Close quickly with ease-out, then reopen after a tiny hold
-      applyPhase(1, 'cubic-bezier(0.25, 0.1, 0.25, 1)');
+      // Close quickly with sharper ease-in for more pronounced motion
+      applyPhase(1, 'cubic-bezier(0.4, 0, 0.6, 1)');
       const t = setTimeout(() => {
-        applyPhase(0, 'cubic-bezier(0.2, 0, 0.2, 1)');
+        applyPhase(0, 'cubic-bezier(0.2, 0, 0.3, 1)');
       }, closeDur + holdDur);
       return () => clearTimeout(t);
     } else {
       // Ensure we ease back to open state when blink flag drops
-      applyPhase(0, 'cubic-bezier(0.2, 0, 0.2, 1)');
+      applyPhase(0, 'cubic-bezier(0.2, 0, 0.3, 1)');
     }
   }, [blink]);
 
@@ -297,12 +339,49 @@ export default function SvgAnimatedAvatar({
     let impulse = 0; // degrees added briefly for emphasis
     let impulseVel = 0;
     let cooldown = 0; // ms until next allowed impulse
+    let debugCounter = 0; // For periodic debug logging
+    let lastListeningNod = listeningNod; // Track listening nod triggers
+
+    console.log('[SvgAnimatedAvatar] Head micromovement animation STARTED', {
+      headSwayPx: cfg.headSwayPx,
+      headTiltDeg: cfg.headTiltDeg,
+      hasRigRoot: !!r.rigRoot
+    });
 
     const twoPi = Math.PI * 2;
-    const phase1 = Math.random() * twoPi;
-    const phase2 = Math.random() * twoPi;
-    const period1 = 9000 + Math.random() * 4000; // 9–13s
-    const period2 = 12000 + Math.random() * 6000; // 12–18s
+
+    // Multi-layered natural movement system with varied periods (using prime-like numbers to avoid repetition)
+    // Layer 1: Breathing rhythm (slow, primary vertical)
+    const breathPhase = Math.random() * twoPi;
+    const breathPeriod = 3700 + Math.random() * 1300; // 3.7-5s breathing cycle
+
+    // Layer 2: Slow drift (very slow random walk)
+    const driftPhaseX = Math.random() * twoPi;
+    const driftPhaseY = Math.random() * twoPi;
+    const driftPeriodX = 23000 + Math.random() * 17000; // 23-40s
+    const driftPeriodY = 19000 + Math.random() * 13000; // 19-32s
+
+    // Layer 3: Micro-adjustments (small corrections)
+    const microPhaseX = Math.random() * twoPi;
+    const microPhaseY = Math.random() * twoPi;
+    const microPhaseTilt = Math.random() * twoPi;
+    const microPeriodX = 7300 + Math.random() * 3700; // 7.3-11s
+    const microPeriodY = 5900 + Math.random() * 4100; // 5.9-10s
+    const microPeriodTilt = 8700 + Math.random() * 5300; // 8.7-14s
+
+    // Layer 4: Subtle tremor/noise (high frequency, very low amplitude)
+    const tremorPhaseX = Math.random() * twoPi;
+    const tremorPhaseY = Math.random() * twoPi;
+    const tremorPeriodX = 1100 + Math.random() * 900; // 1.1-2s
+    const tremorPeriodY = 1300 + Math.random() * 700; // 1.3-2s
+
+    // Amplitude modulation over time (makes movement less predictable)
+    const ampModPhase = Math.random() * twoPi;
+    const ampModPeriod = 31000 + Math.random() * 19000; // 31-50s very slow amplitude variation
+
+    // Easing function for more natural acceleration/deceleration
+    const smoothstep = (x: number) => x * x * (3 - 2 * x);
+    const easeInOutCubic = (x: number) => x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
 
     const loop = (t: number) => {
       const dt = t - lastT; lastT = t;
@@ -311,11 +390,38 @@ export default function SvgAnimatedAvatar({
       const speakLevel = Math.max(smoothedAmp, isSpeaking ? 0.4 : 0);
       const idleGain = Math.max(0.15, 1 - speakLevel * 0.9);
 
-      // Baseline breathing sway (translateY in px) and micro tilt (deg)
-      const baseSway = cfg.headSwayPx; // px
-      const baseTilt = cfg.headTiltDeg;  // deg
-      const sway = Math.sin((t + phase1) / period1 * twoPi) * baseSway * idleGain;
-      const tilt = Math.sin((t + phase2) / period2 * twoPi) * baseTilt * idleGain;
+      // Amplitude modulation: slowly vary the overall movement intensity
+      const ampMod = 0.7 + 0.3 * Math.sin((t + ampModPhase) / ampModPeriod * twoPi);
+
+      // Layer 1: Breathing - primary vertical movement with natural ease-in-out
+      const breathRaw = Math.sin((t + breathPhase) / breathPeriod * twoPi);
+      const breathEased = easeInOutCubic((breathRaw + 1) / 2) * 2 - 1; // Apply easing to sine
+      const breathY = breathEased * cfg.headSwayPx * 0.5 * idleGain * ampMod; // Increased from 0.6 to 0.5 (but base is now 2.5px)
+
+      // Layer 2: Slow drift - gentle random walk in both axes
+      const driftX = Math.sin((t + driftPhaseX) / driftPeriodX * twoPi) * cfg.headSwayPx * 0.35 * idleGain * ampMod; // Increased from 0.25
+      const driftY = Math.sin((t + driftPhaseY) / driftPeriodY * twoPi) * cfg.headSwayPx * 0.25 * idleGain * ampMod; // Increased from 0.3
+
+      // Layer 3: Micro-adjustments - small periodic corrections
+      const microX = Math.sin((t + microPhaseX) / microPeriodX * twoPi) * cfg.headSwayPx * 0.2 * idleGain; // Increased from 0.15
+      const microY = Math.sin((t + microPhaseY) / microPeriodY * twoPi) * cfg.headSwayPx * 0.15 * idleGain; // Increased from 0.2
+      const microTiltRaw = Math.sin((t + microPhaseTilt) / microPeriodTilt * twoPi);
+      const microTiltEased = smoothstep((microTiltRaw + 1) / 2) * 2 - 1;
+      const microTilt = microTiltEased * cfg.headTiltDeg * 0.6 * idleGain * ampMod; // Increased from 0.5
+
+      // Layer 4: Tremor - very subtle high-frequency noise
+      const tremorX = Math.sin((t + tremorPhaseX) / tremorPeriodX * twoPi) * cfg.headSwayPx * 0.08 * idleGain; // Increased from 0.05
+      const tremorY = Math.sin((t + tremorPhaseY) / tremorPeriodY * twoPi) * cfg.headSwayPx * 0.08 * idleGain; // Increased from 0.05
+
+      // Layer 5: Slow rotational drift
+      const driftTiltRaw = Math.sin((t + driftPhaseY * 1.3) / (driftPeriodY * 1.4) * twoPi);
+      const driftTiltEased = smoothstep((driftTiltRaw + 1) / 2) * 2 - 1;
+      const driftTilt = driftTiltEased * cfg.headTiltDeg * 0.5 * idleGain * ampMod; // Increased from 0.4
+
+      // Combine all layers
+      const translateX = driftX + microX + tremorX;
+      const translateY = breathY + driftY + microY + tremorY;
+      const baseTilt = microTilt + driftTilt;
 
       // Emphasis nod impulse based on amplitude spikes; simple velocity/decay model
       cooldown = Math.max(0, cooldown - dt);
@@ -324,6 +430,14 @@ export default function SvgAnimatedAvatar({
         impulseVel += 0.012 + Math.random() * 0.008; // kick
         cooldown = 1800 + Math.random() * 1400;      // 1.8–3.2s
       }
+
+      // Listening nod impulse - triggered by listeningNod state changes
+      if (listeningNod !== lastListeningNod && cooldown === 0) {
+        impulseVel += 0.008 + Math.random() * 0.004; // Gentler kick for listening nods
+        cooldown = 2000 + Math.random() * 1000;      // 2-3s cooldown
+        lastListeningNod = listeningNod;
+      }
+
       // Damped integrator for impulse
       impulse += impulseVel * dt;
       impulseVel += (-0.015 * impulse - 0.008 * impulseVel) * dt; // spring-damper
@@ -331,15 +445,42 @@ export default function SvgAnimatedAvatar({
       const maxImp = cfg.nodMaxDeg * (isSpeaking ? 1 : 0.6);
       impulse = Math.max(-maxImp, Math.min(maxImp, impulse));
 
-      const totalRotate = tilt + impulse;
-      const translateY = sway;
-      r.rigRoot.style.transform = `translate(0px, ${translateY.toFixed(3)}px) rotate(${totalRotate.toFixed(3)}deg)`;
+      const totalRotate = baseTilt + impulse;
+      const transformStr = `translate(${translateX.toFixed(3)}px, ${translateY.toFixed(3)}px) rotate(${totalRotate.toFixed(3)}deg)`;
+      r.rigRoot.style.transform = transformStr;
+
+      // Debug logging every 3 seconds
+      debugCounter++;
+      if (debugCounter % 180 === 0) { // ~3 seconds at 60fps
+        console.log('[SvgAnimatedAvatar] Head movement values:', {
+          translateX: translateX.toFixed(3),
+          translateY: translateY.toFixed(3),
+          totalRotate: totalRotate.toFixed(3),
+          idleGain: idleGain.toFixed(3),
+          ampMod: ampMod.toFixed(3),
+          transform: transformStr,
+          layers: {
+            breathY: breathY.toFixed(3),
+            driftX: driftX.toFixed(3),
+            driftY: driftY.toFixed(3),
+            microX: microX.toFixed(3),
+            microY: microY.toFixed(3),
+            microTilt: microTilt.toFixed(3),
+            tremorX: tremorX.toFixed(3),
+            tremorY: tremorY.toFixed(3),
+            driftTilt: driftTilt.toFixed(3)
+          }
+        });
+      }
 
       raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(raf);
-  }, [smoothedAmp, isSpeaking, cfg.headSwayPx, cfg.headTiltDeg, cfg.nodThreshold, cfg.nodMaxDeg]);
+    return () => {
+      console.log('[SvgAnimatedAvatar] Head micromovement animation STOPPED');
+      cancelAnimationFrame(raf);
+    };
+  }, [smoothedAmp, isSpeaking, listeningNod, cfg.headSwayPx, cfg.headTiltDeg, cfg.nodThreshold, cfg.nodMaxDeg]);
 
   // Eye gaze shifts (slow layer) composed with micro-saccades via CSS vars
   useEffect(() => {

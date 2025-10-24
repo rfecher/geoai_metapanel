@@ -95,7 +95,7 @@ This guide shows practical examples of how to use GeoAI MetaPanel with different
    - Per-persona overrides:
      - Maya Ríos: `mistral` (more creative/empathetic)
      - Otto Reinhardt: `deepseek-r1:7b` (more analytical)
-     - Dr. Sarah Hayes: (blank - uses default)
+     - Dr. Sarah Chen: (blank - uses default)
      - Marcus Webb: `llama3.1` (or blank)
      - Lt. Col. Jessica Hayes: `deepseek-r1:7b` (analytical)
 
