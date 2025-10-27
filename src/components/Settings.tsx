@@ -1,15 +1,20 @@
 import React, { useState } from 'react';
-import HybridAvatarCalibrator from './HybridAvatarCalibrator';
+import AvatarCalibrationTool from './AvatarCalibrationTool';
+import { Persona } from '../data/personas';
 
-type SettingsTab = 'general' | 'avatars' | 'audio' | 'advanced';
+type SettingsTab = 'general' | 'avatars' | 'calibration';
 
 type SettingsProps = {
   children: React.ReactNode; // General settings content from App.tsx
   onClose?: () => void;
   initialTab?: SettingsTab;
+  // Props for calibration tab
+  personas?: Persona[];
+  generatedAvatars?: Record<string, string>;
+  useGeneratedAvatars?: boolean;
 };
 
-export default function Settings({ children, onClose, initialTab = 'general' }: SettingsProps) {
+export default function Settings({ children, onClose, initialTab = 'general', personas = [], generatedAvatars = {}, useGeneratedAvatars = false }: SettingsProps) {
   const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab);
 
   return (
@@ -38,10 +43,10 @@ export default function Settings({ children, onClose, initialTab = 'general' }: 
             ⚙️ General
           </button>
           <button
-            className={`settings-tab ${activeTab === 'avatars' ? 'active' : ''}`}
-            onClick={() => setActiveTab('avatars')}
+            className={`settings-tab ${activeTab === 'calibration' ? 'active' : ''}`}
+            onClick={() => setActiveTab('calibration')}
           >
-            🎭 Avatars
+            🎯 Avatar Calibration
           </button>
         </div>
 
@@ -53,9 +58,18 @@ export default function Settings({ children, onClose, initialTab = 'general' }: 
             </div>
           )}
 
-          {activeTab === 'avatars' && (
-            <div className="settings-tab-panel" style={{ padding: 0, height: '100%' }}>
-              <HybridAvatarCalibrator />
+          {activeTab === 'calibration' && personas.length > 0 && (
+            <div style={{ height: '100%', overflow: 'hidden' }}>
+              <AvatarCalibrationTool
+                personas={personas}
+                generatedAvatars={generatedAvatars}
+                useGeneratedAvatars={useGeneratedAvatars}
+                embedded={true}
+                onClose={() => {
+                  // Don't close the entire settings modal, just switch back to general tab
+                  setActiveTab('general');
+                }}
+              />
             </div>
           )}
         </div>

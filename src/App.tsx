@@ -10,8 +10,6 @@ import { ttsSpeak, ttsPreGenerate, ttsPlayPreGenerated, type TTSSettings, setTts
 // Import piper to ensure window.electron types are available
 import './services/piper';
 import { startRecordingWithVAD, whisperTranscribe, whisperTest, type WhisperModel } from './services/whisper';
-import HybridAvatarCalibrator from './components/HybridAvatarCalibrator';
-import AvatarCalibrationTool from './components/AvatarCalibrationTool';
 import AcknowledgmentBubble, { getAcknowledgment } from './components/AcknowledgmentBubble';
 
 import { startLocalWakeWord, testLocalWakeWord, isLocalWakeWordSupported } from './services/localwakeword';
@@ -115,7 +113,6 @@ export default function App() {
     // Check system preference
     return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   });
-  const [showCalibration, setShowCalibration] = useState(false);
 
   // Conversation dynamics settings (Phase 1: Quick Wins)
   const [showAcknowledgments, setShowAcknowledgments] = useState(true);
@@ -124,11 +121,6 @@ export default function App() {
 
   // Streaming settings (Phase 2: Streaming Responses)
   const [enableStreaming, setEnableStreaming] = useState(true);
-  // Temporary access: open ?calibrate=hybrid to load the hybrid avatar calibrator page
-  const calibratePage = new URLSearchParams(window.location.search).get('calibrate');
-  if (calibratePage === 'hybrid') {
-    return <HybridAvatarCalibrator />;
-  }
 
 
 
@@ -1095,7 +1087,12 @@ export default function App() {
       )}
 
       {showSettings && (
-        <Settings onClose={() => setShowSettings(false)}>
+        <Settings
+          onClose={() => setShowSettings(false)}
+          personas={selectedPersonasMerged}
+          generatedAvatars={generatedAvatars}
+          useGeneratedAvatars={useGeneratedAvatars}
+        >
           <LLMProviderSelector
             config={llmConfig}
             onConfigChange={setLlmConfig}
@@ -1449,6 +1446,8 @@ export default function App() {
             </label>
           </div>
 
+
+
           {useGeneratedAvatars && (
             <>
               <div className="label" style={{ marginTop: 8 }}>Provider</div>
@@ -1577,15 +1576,6 @@ export default function App() {
           disabled={isRecording || isTranscribing || busy}
         />
       </div>
-
-      {showCalibration && (
-        <AvatarCalibrationTool
-          personas={personas}
-          generatedAvatars={generatedAvatars}
-          useGeneratedAvatars={useGeneratedAvatars}
-          onClose={() => setShowCalibration(false)}
-        />
-      )}
 
     </div>
 

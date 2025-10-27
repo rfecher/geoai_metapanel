@@ -9,9 +9,26 @@ export type Persona = {
   ttsVoiceId?: string; // platform-specific voice identifier (optional)
   intro?: string; // pre-canned introduction (optional)
   imagePrompt?: string; // optional: more specific prompt for image generation
+  eyeColor?: string; // iris color for pupil rendering (e.g., '#8B6F47' for brown, '#5B8FA3' for blue)
   faceAnchors?: {
-    mouth: { xPct: number; yPct: number; sizePct: number };
+    mouth: {
+      xPct: number;
+      yPct: number;
+      sizePct: number;
+      widthPct?: number;
+      heightPct?: number;
+    };
     eyes?: { yPct: number; heightPct?: number };
+    showTeethHint?: boolean;
+    eyeSeparationPct?: number;
+    pupilSizeScale?: number;
+    eyeScale?: number;
+    eyeWidthPct?: number;
+    eyeCenterOffsetPct?: number;
+    leftPupilYPct?: number;
+    rightPupilYPct?: number;
+    maxPupilOffsetX?: number;
+    maxPupilOffsetY?: number;
   };
   animationConfig?: {
     mouthGain?: number;
@@ -41,6 +58,9 @@ export type Persona = {
     dilationRangeLPx?: number;  // 0..1.0 (default 0.4)
     dilationRangeRPx?: number;  // 0..1.0 (default 0.4)
     dilationPeriodSec?: number; // 5..20 (default 11)
+    // Pupil movement constraints (percentage-based safe movement boundaries)
+    maxPupilOffsetX?: number;  // 0..2.0 (max horizontal pupil movement as % of avatar width, default 0.8)
+    maxPupilOffsetY?: number;  // 0..1.5 (max vertical pupil movement as % of avatar height, default 0.5)
   };
 
 };
@@ -54,6 +74,7 @@ export const personas: Persona[] = [
     color: '#7C3AED',
     avatarInitials: 'MR',
     imageUrl: '/avatars/maya_hybrid.svg',
+    eyeColor: '#5C4338', // Deep brown eyes
     faceAnchors: {
         "mouth": {
             "xPct": 53.450520833333336,
@@ -91,6 +112,8 @@ export const personas: Persona[] = [
       dilationRangeLPx: 0.35,
       dilationRangeRPx: 0.35,
       dilationPeriodSec: 12,
+      maxPupilOffsetX: 0.78, // Calibrated for Maya's eye dimensions
+      maxPupilOffsetY: 0.29,
     },
     intro: "Hello. I'm Maya Ríos, Senior Policy Advisor with the Assembly of First Nations. I'm Cree Nation, and before policy work, I spent 15 years as Emergency Response Director with the Canadian Red Cross across northern and Arctic communities. I've coordinated evacuations during wildfires and floods in remote locations, and I've seen firsthand how poor geospatial data and ignored traditional knowledge can cost lives. I bring that field experience to Indigenous data sovereignty work now, ensuring our communities have control over spatial data about our lands and peoples. I'm here to discuss both the ethical and operational realities of geospatial AI.",
     systemPrompt: `You are Maya Ríos — Senior Policy Advisor, Assembly of First Nations (Canada).
@@ -160,6 +183,7 @@ CRITICAL OUTPUT FORMAT REQUIREMENTS:
     },
     avatarInitials: 'OR',
     imageUrl: '/avatars/otto_hybrid.svg',
+    eyeColor: '#45493f', // Blue-gray eyes
     imagePrompt: 'Professional headshot of Prof. Otto Reinhardt, white European man in his late 60s to early 70s; fair skin; silver hair with receding hairline; neatly trimmed gray beard or clean-shaven; rectangular eyeglasses; blue-gray eyes; composed, slightly stern expression. Neutral cool-gray studio background, classic three-point lighting, 85mm portrait lens, shallow depth of field. Dark suit, white shirt, conservative tie. Photorealistic, high detail, natural skin texture.',
     ttsVoiceId: 'en_GB-semaine-medium#2', // Piper: Obadiah speaker - distinguished academic
     animationConfig: {
@@ -186,6 +210,8 @@ CRITICAL OUTPUT FORMAT REQUIREMENTS:
       dilationRangeLPx: 0.3,
       dilationRangeRPx: 0.3,
       dilationPeriodSec: 13,
+      maxPupilOffsetX: 0.52, // Calibrated for Otto's eye dimensions
+      maxPupilOffsetY: 0.16,
     },
     intro: "Good day. Otto Reinhardt here, Professor Emeritus from Vienna University of Technology. I've spent 43 years studying cartographic projections and spatial reference systems, and frankly, I'm concerned about what I'm seeing. We cannot simply abandon proper mathematical rigor and established standards in this rush toward so-called artificial intelligence.",
     systemPrompt: `You are Prof. Otto Reinhardt — Professor Emeritus, Vienna University of Technology.
@@ -241,6 +267,7 @@ CRITICAL OUTPUT FORMAT REQUIREMENTS:
     color: '#059669',
     avatarInitials: 'SH',
     imageUrl: '/avatars/sarah_hybrid.svg',
+    eyeColor: '#4A3832', // Dark brown eyes
     faceAnchors: {
         "mouth": {
             "xPct": 49.64192708333333,
@@ -278,6 +305,8 @@ CRITICAL OUTPUT FORMAT REQUIREMENTS:
       dilationRangeLPx: 0.4,
       dilationRangeRPx: 0.4,
       dilationPeriodSec: 10,
+      maxPupilOffsetX: 0.46, // Calibrated for Sarah's eye dimensions
+      maxPupilOffsetY: 0.20,
     },
     intro: "Hi everyone! Sarah Chen here, Principal Research Scientist at Mozilla Foundation. I spent years at Google working on Earth Engine before moving to open source. I'm passionate about building transparent, community-driven geospatial AI tools that anyone can use, audit, and improve. Looking forward to this discussion!",
     systemPrompt: `You are Dr. Sarah Chen — Principal Research Scientist, Mozilla Foundation.
@@ -332,6 +361,7 @@ CRITICAL OUTPUT FORMAT REQUIREMENTS:
     color: '#0EA5E9',
     avatarInitials: 'MW',
     imageUrl: '/avatars/marcus_hybrid.svg',
+    eyeColor: '#6B4E3D', // Brown eyes
     faceAnchors: {
         "mouth": {
             "xPct": 50.05371093749999,
@@ -369,6 +399,8 @@ CRITICAL OUTPUT FORMAT REQUIREMENTS:
       dilationRangeLPx: 0.4,
       dilationRangeRPx: 0.4,
       dilationPeriodSec: 11,
+      maxPupilOffsetX: 0.52, // Calibrated for Marcus's eye dimensions
+      maxPupilOffsetY: 0.26,
     },
     intro: "Marcus Webb here, VP of Geospatial AI at Palantir. Look, I spent 12 years at NSA before moving to the private sector, and I've seen what works and what doesn't. Our platforms are deployed right now in disaster response, counter-terrorism, critical infrastructure protection. We've prevented real threats, saved real lives. I'm here to talk about what actually works in the field, not just theory.",
     systemPrompt: `You are Dr. Marcus Webb — VP of Geospatial AI at Palantir Technologies.
@@ -425,6 +457,7 @@ CRITICAL OUTPUT FORMAT REQUIREMENTS:
     color: '#8B5CF6',
     avatarInitials: 'JH',
     imageUrl: '/avatars/jessica_hybrid.svg',
+    eyeColor: '#7a807e', // Blue-hazel eyes
     faceAnchors: {
         "mouth": {
             "xPct": 48.73291015625,
@@ -462,6 +495,8 @@ CRITICAL OUTPUT FORMAT REQUIREMENTS:
       dilationRangeLPx: 0.35,
       dilationRangeRPx: 0.35,
       dilationPeriodSec: 11.5,
+      maxPupilOffsetX: 0.72, // Calibrated for Jessica's eye dimensions
+      maxPupilOffsetY: 0.26,
     },
     intro: "Lieutenant Colonel Jessica Hayes, Director of Geospatial Intelligence Division, US Space Force. I've served 18 years in military intelligence, Iraq, Afghanistan, INDOPAYCOM. My job is to deliver operational capabilities that protect both national security and democratic values. And I'll be direct with you, our adversaries aren't waiting for perfect solutions, and neither can we.",
     systemPrompt: `You are Lt. Colonel Jessica Hayes — Director of the Geospatial Intelligence Division, US Space Force.

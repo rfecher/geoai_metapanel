@@ -1,6 +1,6 @@
 import React from 'react';
 import { Persona } from '../data/personas';
-import SvgAnimatedAvatar from "./SvgAnimatedAvatar";
+import BrandedAvatar from "./BrandedAvatar";
 
 type LayoutMode = 'speaker' | 'grid';
 
@@ -48,14 +48,14 @@ export default function VideoConferenceLayout({
         {/* Main speaker view */}
         <div className="speaker-main">
           <div className="speaker-content">
-              <SvgAnimatedAvatar
-                svgUrl={speakingPersona.imageUrl}
+              <BrandedAvatar
+                personaId={speakingPersona.id}
                 name={speakingPersona.name}
-                color={speakingPersona.color}
                 size="large"
                 isSpeaking={true}
                 audioAmplitude={audioAmplitudes[speakingPersona.id] || 0}
                 visemePose={visemesByPersona[speakingPersona.id]}
+                faceAnchors={speakingPersona.faceAnchors}
                 animationConfig={speakingPersona.animationConfig}
               />
             <div className="speaker-info">
@@ -81,15 +81,15 @@ export default function VideoConferenceLayout({
             const thinking = inFlight.has(p.id);
             return (
               <div key={p.id} className="thumbnail-item">
-                <SvgAnimatedAvatar
-                  svgUrl={p.imageUrl}
+                <BrandedAvatar
+                  personaId={p.id}
                   name={p.name}
-                  color={p.color}
                   size="small"
                   isSpeaking={false}
                   isListening={enableListeningAnimations && !!speakingPersonaId}
                   audioAmplitude={0}
                   visemePose={visemesByPersona[p.id]}
+                  faceAnchors={p.faceAnchors}
                   animationConfig={p.animationConfig}
                 />
                 <div className="thumbnail-info">
@@ -125,15 +125,15 @@ export default function VideoConferenceLayout({
 
           return (
             <div key={p.id} className={`grid-item ${speaking ? 'speaking' : ''}`}>
-                <SvgAnimatedAvatar
-                  svgUrl={p.imageUrl}
+                <BrandedAvatar
+                  personaId={p.id}
                   name={p.name}
-                  color={p.color}
                   size="medium"
                   isSpeaking={speaking}
                   isListening={enableListeningAnimations && !speaking && !!speakingPersonaId}
                   audioAmplitude={audioAmplitudes[p.id] || 0}
                   visemePose={visemesByPersona[p.id]}
+                  faceAnchors={p.faceAnchors}
                   animationConfig={p.animationConfig}
                 />
               <div className="grid-info">

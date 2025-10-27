@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
+import { personas } from '../data/personas';
 
 type AnimatedAvatarProps = {
   personaId?: string;
@@ -96,7 +97,17 @@ export default function AnimatedAvatar({
     eyeWidthPct: Math.max(6, Math.min(22, (anchors as any)?.eyeWidthPct ?? ((eyesAnchor?.heightPct ?? 12) * 1.5))),
     eyeScale: Math.max(0.5, Math.min(2.0, (anchors as any)?.eyeScale ?? (animationConfig as any)?.eyeScale ?? 1.0)),
     pupilSizeScale: Math.max(0.3, Math.min(1.3, (anchors as any)?.pupilSizeScale ?? (animationConfig as any)?.pupilSizeScale ?? 1.0)),
-  }), [animationConfig]);
+    // Independent pupil Y positions (with backward compatibility)
+    leftPupilYPct: (anchors as any)?.leftPupilYPct ?? eyesAnchor?.yPct ?? 20,
+    rightPupilYPct: (anchors as any)?.rightPupilYPct ?? eyesAnchor?.yPct ?? 20,
+  }), [animationConfig, anchors, eyesAnchor]);
+
+  // Get eye color from persona definition (default to brown if not specified)
+  const eyeColor = React.useMemo(() => {
+    if (!personaId) return '#6B4E3D'; // Default brown
+    const persona = personas.find(p => p.id === personaId);
+    return persona?.eyeColor ?? '#6B4E3D'; // Default brown
+  }, [personaId]);
 
   // Mouth envelope: optional single-pole or attack/release smoothing
   const envRef = useRef(0);
@@ -296,14 +307,32 @@ export default function AnimatedAvatar({
         )}
 
         {/* Blink eyelids: upper + lower with curved motion */}
-        {/* Gaze pupils overlay (subtle, sits under eyelids) */}
+        {/* Gaze pupils with iris overlay (subtle, sits under eyelids) - now with independent Y positions */}
         {imageUrl && cfg.gazeEnabled && (
           <>
+            {/* Left iris (outer colored ring) */}
+            <div
+              className="gaze-iris left"
+              style={{
+                position: 'absolute',
+                top: `${cfg.leftPupilYPct + gaze.y}%`,
+                left: `${50 + cfg.eyeCenterOffsetPct - (cfg.eyeSeparationPct / 2) + gaze.x}%`,
+                transform: 'translate(-50%, -50%)',
+                width: `${Math.max(2.5, (eyesAnchor?.heightPct ?? 12) * 0.4 * cfg.pupilSizeScale) * cfg.eyeScale * 1.8}%`,
+                height: `${Math.max(2.5, (eyesAnchor?.heightPct ?? 12) * 0.4 * cfg.pupilSizeScale) * cfg.eyeScale * 1.8}%`,
+                borderRadius: '50%',
+                background: `radial-gradient(circle at 45% 55%, ${eyeColor}bb, ${eyeColor}99 60%, ${eyeColor}66 85%, ${eyeColor}33 100%)`,
+                opacity: 0.22,
+                mixBlendMode: 'multiply',
+                willChange: 'transform',
+              }}
+            />
+            {/* Left pupil (inner black center) */}
             <div
               className="gaze-pupil left"
               style={{
                 position: 'absolute',
-                top: `${(eyesAnchor?.yPct ?? 20) + gaze.y}%`,
+                top: `${cfg.leftPupilYPct + gaze.y}%`,
                 left: `${50 + cfg.eyeCenterOffsetPct - (cfg.eyeSeparationPct / 2) + gaze.x}%`,
                 transform: 'translate(-50%, -50%)',
                 width: `${Math.max(2.5, (eyesAnchor?.heightPct ?? 12) * 0.4 * cfg.pupilSizeScale) * cfg.eyeScale}%`,
@@ -315,11 +344,29 @@ export default function AnimatedAvatar({
                 willChange: 'transform',
               }}
             />
+            {/* Right iris (outer colored ring) */}
+            <div
+              className="gaze-iris right"
+              style={{
+                position: 'absolute',
+                top: `${cfg.rightPupilYPct + gaze.y}%`,
+                left: `${50 + cfg.eyeCenterOffsetPct + (cfg.eyeSeparationPct / 2) + gaze.x}%`,
+                transform: 'translate(-50%, -50%)',
+                width: `${Math.max(2.5, (eyesAnchor?.heightPct ?? 12) * 0.4 * cfg.pupilSizeScale) * cfg.eyeScale * 1.8}%`,
+                height: `${Math.max(2.5, (eyesAnchor?.heightPct ?? 12) * 0.4 * cfg.pupilSizeScale) * cfg.eyeScale * 1.8}%`,
+                borderRadius: '50%',
+                background: `radial-gradient(circle at 45% 55%, ${eyeColor}bb, ${eyeColor}99 60%, ${eyeColor}66 85%, ${eyeColor}33 100%)`,
+                opacity: 0.22,
+                mixBlendMode: 'multiply',
+                willChange: 'transform',
+              }}
+            />
+            {/* Right pupil (inner black center) */}
             <div
               className="gaze-pupil right"
               style={{
                 position: 'absolute',
-                top: `${(eyesAnchor?.yPct ?? 20) + gaze.y}%`,
+                top: `${cfg.rightPupilYPct + gaze.y}%`,
                 left: `${50 + cfg.eyeCenterOffsetPct + (cfg.eyeSeparationPct / 2) + gaze.x}%`,
                 transform: 'translate(-50%, -50%)',
                 width: `${Math.max(2.5, (eyesAnchor?.heightPct ?? 12) * 0.4 * cfg.pupilSizeScale) * cfg.eyeScale}%`,
@@ -420,25 +467,65 @@ export default function AnimatedAvatar({
             viewBox="0 0 100 50"
           >
             <defs>
-              <linearGradient id="mouthShade" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="rgba(0,0,0,0.6)" />
-                <stop offset="50%" stopColor="rgba(0,0,0,0.9)" />
-                <stop offset="100%" stopColor="rgba(0,0,0,0.4)" />
+              {/* Outer lip gradient - natural lip color tones */}
+              <radialGradient id="lipOuter" cx="50%" cy="40%">
+                <stop offset="0%" stopColor="rgba(180, 100, 100, 0.6)" />
+                <stop offset="60%" stopColor="rgba(140, 70, 70, 0.7)" />
+                <stop offset="100%" stopColor="rgba(100, 50, 50, 0.5)" />
+              </radialGradient>
+
+              {/* Inner mouth gradient - darker for depth */}
+              <radialGradient id="mouthInner" cx="50%" cy="45%">
+                <stop offset="0%" stopColor="rgba(40, 15, 15, 0.85)" />
+                <stop offset="50%" stopColor="rgba(20, 8, 8, 0.95)" />
+                <stop offset="100%" stopColor="rgba(10, 5, 5, 0.75)" />
+              </radialGradient>
+
+              {/* Lip highlight gradient for 3D effect */}
+              <linearGradient id="lipHighlight" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="rgba(200, 120, 120, 0.3)" />
+                <stop offset="40%" stopColor="rgba(160, 90, 90, 0.15)" />
+                <stop offset="100%" stopColor="rgba(120, 60, 60, 0.05)" />
               </linearGradient>
+
               <clipPath id="mouthClip">
                 <ellipse cx="50" cy="25" rx="40" ry="15" />
               </clipPath>
             </defs>
 
-            {/* Main mouth opening - much more prominent */}
+            {/* Outer lip area - natural lip color (ENLARGED for more prominence) */}
             <ellipse
               cx="50"
-              cy={25 + lipOpen * 3}
-              rx={12 + lipWide * 20 + (1 - lipRound) * 6}
-              ry={2 + lipOpen * 18 + lipRound * 10}
-              fill="url(#mouthShade)"
+              cy={25 + lipOpen * 2.5}
+              rx={18 + lipWide * 26 + (1 - lipRound) * 9}
+              ry={5 + lipOpen * 24 + lipRound * 13}
+              fill="url(#lipOuter)"
               clipPath="url(#mouthClip)"
-              opacity={0.7 + lipOpen * 0.3}
+              opacity={0.8 + lipOpen * 0.15}
+              style={{ transition: 'all 0.06s ease-out' }}
+            />
+
+            {/* Inner mouth opening - dark for depth (REDUCED for less dominance) */}
+            <ellipse
+              cx="50"
+              cy={25 + lipOpen * 4}
+              rx={5 + lipWide * 10 + (1 - lipRound) * 2}
+              ry={0.8 + lipOpen * 9 + lipRound * 5}
+              fill="url(#mouthInner)"
+              clipPath="url(#mouthClip)"
+              opacity={0.7 + lipOpen * 0.2}
+              style={{ transition: 'all 0.06s ease-out' }}
+            />
+
+            {/* Upper lip highlight for 3D effect (ENLARGED to match outer lip) */}
+            <ellipse
+              cx="50"
+              cy={23 + lipOpen * 1.5}
+              rx={14 + lipWide * 22 + (1 - lipRound) * 7}
+              ry={3 + lipOpen * 8 + lipRound * 5}
+              fill="url(#lipHighlight)"
+              clipPath="url(#mouthClip)"
+              opacity={0.45 - lipOpen * 0.15}
               style={{ transition: 'all 0.06s ease-out' }}
             />
 
@@ -458,32 +545,31 @@ export default function AnimatedAvatar({
               />
             )}
 
-            {/* Upper lip shadow - more pronounced */}
+            {/* Subtle lip contour lines */}
             <path
               d={`M ${15 - lipWide * 4} ${25 - lipOpen * 3} Q 50 ${18 - lipOpen * 5} ${85 + lipWide * 4} ${25 - lipOpen * 3}`}
-              stroke="rgba(0, 0, 0, 0.6)"
-              strokeWidth={1.2 + lipOpen * 1}
+              stroke="rgba(100, 50, 50, 0.4)"
+              strokeWidth={1.2 + lipOpen * 0.8}
               fill="none"
               style={{ transition: 'all 0.08s ease-out' }}
             />
 
-            {/* Lower lip shadow - follows mouth opening */}
             <path
               d={`M ${15 - lipWide * 3} ${25 + lipOpen * 2} Q 50 ${32 + lipOpen * 6} ${85 + lipWide * 3} ${25 + lipOpen * 2}`}
-              stroke="rgba(0, 0, 0, 0.5)"
-              strokeWidth={1 + lipOpen * 0.8}
+              stroke="rgba(80, 40, 40, 0.35)"
+              strokeWidth={1 + lipOpen * 0.6}
               fill="none"
               style={{ transition: 'all 0.08s ease-out' }}
             />
 
-            {/* Corner depth shadows - more visible */}
+            {/* Corner depth shadows for realism */}
             <ellipse
               cx="18"
               cy={25 + lipOpen * 1.5}
               rx={3 + lipWide * 2}
               ry={2 + lipOpen * 4}
-              fill="rgba(0,0,0,0.5)"
-              opacity={0.4 + lipOpen * 0.6}
+              fill="rgba(30, 15, 15, 0.6)"
+              opacity={0.5 + lipOpen * 0.5}
               style={{ transition: 'all 0.06s ease-out' }}
             />
             <ellipse
@@ -491,19 +577,19 @@ export default function AnimatedAvatar({
               cy={25 + lipOpen * 1.5}
               rx={3 + lipWide * 2}
               ry={2 + lipOpen * 4}
-              fill="rgba(0,0,0,0.5)"
-              opacity={0.4 + lipOpen * 0.6}
+              fill="rgba(30, 15, 15, 0.6)"
+              opacity={0.5 + lipOpen * 0.5}
               style={{ transition: 'all 0.06s ease-out' }}
             />
 
-            {/* Additional mouth interior for depth */}
+            {/* Deep interior shadow for additional depth (REDUCED) */}
             <ellipse
               cx="50"
-              cy={26 + lipOpen * 4}
-              rx={6 + lipWide * 12}
-              ry={1 + lipOpen * 8}
-              fill="rgba(0,0,0,0.8)"
-              opacity={lipOpen * 0.8}
+              cy={27 + lipOpen * 5}
+              rx={3 + lipWide * 6}
+              ry={0.5 + lipOpen * 4}
+              fill="rgba(10, 5, 5, 0.9)"
+              opacity={lipOpen * 0.6}
               clipPath="url(#mouthClip)"
               style={{ transition: 'all 0.06s ease-out' }}
             />

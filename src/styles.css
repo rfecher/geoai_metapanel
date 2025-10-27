@@ -429,6 +429,12 @@ body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Helve
   backface-visibility: hidden;
 }
 
+/* Branded avatar layering: static brand elements, moving avatar only */
+.branded-avatar { position: relative; border-radius: 12px; overflow: hidden; }
+.branded-avatar .avatar-portrait { will-change: transform; transform: translateZ(0); backface-visibility: hidden; }
+.branded-avatar .brand-backdrop, .branded-avatar .brand-logo, .branded-avatar .brand-vignette { pointer-events: none; }
+
+
 /* Smooth transitions for layout changes */
 .video-conference * {
   transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
