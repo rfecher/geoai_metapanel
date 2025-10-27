@@ -359,19 +359,31 @@ export default function BrandedAvatar({
       title={name}
     >
       {/* Static backdrop (brand) */}
-      <img
+      <div
         className="brand-backdrop"
-        src={BACKDROP_URL}
-        alt="Conference backdrop"
         style={{
           position: 'absolute',
           inset: 0,
           width: '100%',
           height: '100%',
-          objectFit: 'cover',
-          filter: 'saturate(0.95) brightness(0.9) contrast(1.05)',
+          overflow: 'hidden',
         }}
-      />
+      >
+        <img
+          src={BACKDROP_URL}
+          alt="Conference backdrop"
+          style={{
+            position: 'absolute',
+            width: '100%',
+            height: '100%',
+            objectFit: 'cover',
+            objectPosition: '5% 35%', // Position reference point in upper-center area
+            transform: 'scale(1.9)', // Zoom in significantly to make monument more prominent and recognizable
+            transformOrigin: '50% 35%', // Zoom from the upper-center where monument is located
+            filter: 'saturate(0.95) brightness(0.9) contrast(1.05)',
+          }}
+        />
+      </div>
 
       {/* Soft vignette for focus */}
       <div
@@ -391,10 +403,10 @@ export default function BrandedAvatar({
         alt="FOSS4G NA 2025"
         style={{
           position: 'absolute',
-          top: 6,
-          left: 6,
-          width: Math.round(w * 0.28),
-          height: Math.round(w * 0.28),
+          top: 1,
+          left: 1,
+          width: Math.round(w * 0.38),
+          height: Math.round(w * 0.38),
           objectFit: 'contain',
           filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.6))',
         }}
