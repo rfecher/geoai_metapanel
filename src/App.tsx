@@ -13,6 +13,7 @@ import { startRecordingWithVAD, whisperTranscribe, whisperTest, type WhisperMode
 import AcknowledgmentBubble, { getAcknowledgment } from './components/AcknowledgmentBubble';
 
 import { startLocalWakeWord, testLocalWakeWord, isLocalWakeWordSupported } from './services/localwakeword';
+import { setBackupConfig, getBackupStatus, addBackupStateListener, removeBackupStateListener, getBackupMatchConfidence, type BackupMode } from './services/backup';
 type Msg = {
   id: string;
   role: 'user' | 'assistant';
@@ -122,7 +123,9 @@ export default function App() {
   // Streaming settings (Phase 2: Streaming Responses)
   const [enableStreaming, setEnableStreaming] = useState(true);
 
-
+  // Backup/fallback system state
+  const [backupMode, setBackupMode] = useState<BackupMode>('auto');
+  const [backupStatus, setBackupStatus] = useState<string>('Backup mode: Ready');
 
   useEffect(() => {
     setTtsAmplitudeListener(info => {
@@ -318,6 +321,8 @@ export default function App() {
       if (typeof s.enableListeningAnimations === 'boolean') setEnableListeningAnimations(s.enableListeningAnimations);
       // Load streaming settings
       if (typeof s.enableStreaming === 'boolean') setEnableStreaming(s.enableStreaming);
+      // Load backup mode settings
+      if (s.backupMode === 'disabled' || s.backupMode === 'auto' || s.backupMode === 'always' || s.backupMode === 'hybrid') setBackupMode(s.backupMode);
     } catch {}
   }, []);
   // Prefill Azure voices with recommended defaults per persona (non-destructive)
@@ -420,28 +425,7 @@ export default function App() {
     // Don't reset the chain - let the next speaker continue
   }, []);
 
-  const playIntro = useCallback(async (personaId: string) => {
-    const persona = personas.find(p => p.id === personaId);
-    if (!persona?.intro) return;
 
-    const ttsSettings: TTSSettings = {
-      provider: ttsProvider,
-      defaultVoice,
-      personaVoices,
-      azureRegion,
-      azureKey,
-      elevenApiKey: elevenKey,
-    };
-
-    try {
-      setSpeakingId(personaId);
-      await ttsSpeak(persona.intro, ttsSettings, personaId);
-    } catch (error) {
-      console.error('Failed to play intro:', error);
-    } finally {
-      setSpeakingId(null);
-    }
-  }, [ttsProvider, defaultVoice, personaVoices, azureRegion, azureKey, elevenKey]);
 
 
   // Clear personaVoices when switching to Piper (voices come from persona definitions)
@@ -450,6 +434,30 @@ export default function App() {
       setPersonaVoices({});
     }
   }, [ttsProvider]);
+
+  // Sync backup mode with backup service
+  useEffect(() => {
+    setBackupConfig({ mode: backupMode });
+  }, [backupMode]);
+
+  // Listen for backup status changes
+  useEffect(() => {
+    const updateStatus = () => {
+      const status = getBackupStatus();
+      setBackupStatus(status.message);
+    };
+
+    // Initial status
+    updateStatus();
+
+    // Add listener
+    addBackupStateListener(updateStatus);
+
+    // Cleanup
+    return () => {
+      removeBackupStateListener(updateStatus);
+    };
+  }, []);
 
   // Persist settings when they change
   useEffect(() => {
@@ -471,9 +479,10 @@ export default function App() {
       showTypingIndicators,
       enableListeningAnimations,
       enableStreaming,
+      backupMode,
     };
     try { localStorage.setItem('settings', JSON.stringify(s)); } catch {}
-  }, [llmConfig, personaModels, contextSize, mode, ttsProvider, defaultVoice, personaVoices, azureRegion, azureKey, elevenKey, whisperModel, showAcknowledgments, showTypingIndicators, enableListeningAnimations, enableStreaming]);
+  }, [llmConfig, personaModels, contextSize, mode, ttsProvider, defaultVoice, personaVoices, azureRegion, azureKey, elevenKey, whisperModel, showAcknowledgments, showTypingIndicators, enableListeningAnimations, enableStreaming, backupMode]);
 
 
   const scrollToEnd = useCallback(() => {
@@ -694,8 +703,33 @@ export default function App() {
     }
   }
 
+  // Robust check for "SKIP" control token that sometimes arrives with labels/quotes
+  function isSkipAddendum(raw: string, personaName: string): boolean {
+    if (!raw) return true;
+    let s = String(raw).trim();
+    // Strip leading persona label like "Dr. Sarah Chen:" if present
+    const lower = s.toLowerCase();
+    const label = `${personaName.toLowerCase()}:`;
+    if (lower.startsWith(label)) {
+      s = s.slice(label.length).trim();
+    }
+    // Remove matching surrounding quotes
+    if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith('\'') && s.endsWith('\''))) {
+      s = s.slice(1, -1).trim();
+    }
+    // Normalize: uppercase and strip trailing punctuation
+    const normalized = s.toUpperCase().replace(/[\s\.!?]+$/g, '');
+    return normalized === 'SKIP';
+  }
+
+
   const onSend = useCallback(async (questionOverride?: string) => {
     const question = (questionOverride || input).trim();
+
+	// Detect if this is the canned introduction question to avoid addendums and cross-talk
+	const introMatch = getBackupMatchConfidence(question);
+	const isIntroduction = introMatch?.matchType === 'introduction' && introMatch.confidence >= 0.75;
+
     if (!question || busy) return;
 
     const userMsg: Msg = { id: `m-${Date.now()}-u`, role: 'user', author: 'You', text: question, color: '#3B82F6' };
@@ -704,7 +738,7 @@ export default function App() {
     scrollToEnd();
 
     setBusy(true);
-    try {
+
       if (selectedPersonas.length === 0) return;
 
       // Build context from current question only to reduce repetition and keep focus
@@ -792,7 +826,7 @@ export default function App() {
             const ttsHandler = new StreamingTTSHandler(p.id, ttsSettings);
 
             // Stream the response
-            answer = await chatWithLLMStreaming(llmConfig, { model: usedModel, messages: reqMsgs }, (chunk) => {
+            answer = await chatWithLLMStreaming(llmConfig, { model: usedModel, messages: reqMsgs, personaId: p.id }, (chunk) => {
               answer += chunk;
               // Update the message with accumulated text
               setMessages(prev => prev.map(m =>
@@ -815,7 +849,7 @@ export default function App() {
             console.log(`✅ Got streaming LLM response for ${p.name}`);
           } else {
             // Non-streaming mode: wait for complete response
-            answer = await chatWithLLM(llmConfig, { model: usedModel, messages: reqMsgs });
+            answer = await chatWithLLM(llmConfig, { model: usedModel, messages: reqMsgs, personaId: p.id });
             console.log(`✅ Got LLM response for ${p.name}`);
 
             const aMsg: Msg = { id: `m-${Date.now()}-${p.id}`, role: 'assistant', personaId: p.id, author: p.name, text: answer, color: p.color };
@@ -895,11 +929,8 @@ export default function App() {
             let answer = '';
             let messageCreated = false;
 
-            // Create TTS handler for sentence-based streaming
-            const ttsHandler = new StreamingTTSHandler(p.id, ttsSettings);
-
-            // Stream the response
-            answer = await chatWithLLMStreaming(llmConfig, { model: usedModel, messages: reqMsgs }, (chunk) => {
+            // Stream the response (UI updates only); defer TTS until the full response is ready
+            answer = await chatWithLLMStreaming(llmConfig, { model: usedModel, messages: reqMsgs, personaId: p.id }, (chunk) => {
               answer += chunk;
 
               if (!messageCreated) {
@@ -930,13 +961,11 @@ export default function App() {
                 ));
               }
               scrollToEnd();
-
-              // Process chunk for TTS
-              ttsHandler.addChunk(chunk);
             });
 
-            // Finalize TTS
-            ttsHandler.finalize();
+            // Pre-generate full TTS and queue playback after the complete response is ready
+            const ttsPromise = ttsPreGenerate(answer, ttsSettings, p.id);
+            speakQueued(answer, p.id, ttsPromise);
 
             // Mark streaming as complete
             setMessages(prev => prev.map(m =>
@@ -959,7 +988,7 @@ export default function App() {
             const sys: ChatMessage = { role: 'system', content: `${p.systemPrompt}\n\nYou are one panelist among several. Focus on answering the user's question directly with your unique perspective. Use your background as inspiration for creative, varied insights - don't repeatedly mention the same credentials. Keep your response concise and focused.` };
             const usedModel = personaModels[p.id] || llmConfig.defaultModel;
             const reqMsgs: ChatMessage[] = [sys, ...baseHistory, { role: 'user', content: question }];
-            return { p, usedModel, promise: chatWithLLM(llmConfig, { model: usedModel, messages: reqMsgs }) };
+            return { p, usedModel, promise: chatWithLLM(llmConfig, { model: usedModel, messages: reqMsgs, personaId: p.id }) };
           });
 
           // Process each response as it completes - fully non-blocking
@@ -995,6 +1024,9 @@ export default function App() {
         }
 
         // Addendums in persona order, each referencing others' points
+        // Skip addendums entirely for the introduction round to avoid cross-talk and SKIP noise
+        if (!isIntroduction) {
+
         for (const p of selectedPersonas) {
           const others = selectedPersonas
             .filter(o => o.id !== p.id)
@@ -1011,10 +1043,10 @@ export default function App() {
             { role: 'assistant', content: `Panel so far:\n${others.join('\n')}` },
             { role: 'user', content: 'If you have a strong reaction to a specific point made by another panelist, give a concise addendum (1-2 sentences). Otherwise, respond with exactly "SKIP".' }
           ];
-          const addendum = await chatWithLLM(llmConfig, { model: usedModel, messages: addReq });
+          const addendum = await chatWithLLM(llmConfig, { model: usedModel, messages: addReq, personaId: p.id });
 
           // Only add the addendum if it's not "SKIP"
-          if (addendum.trim().toUpperCase() !== 'SKIP') {
+          if (!isSkipAddendum(addendum, p.name)) {
             const addMsg: Msg = { id: `m-${Date.now()}-${p.id}-add`, role: 'assistant', personaId: p.id, author: p.name, text: addendum, color: p.color };
             setMessages(prev => [...prev, addMsg]);
             scrollToEnd();
@@ -1025,9 +1057,8 @@ export default function App() {
           }
         }
       }
-    } finally {
-      setBusy(false);
-    }
+    setBusy(false);
+  }
   }, [input, busy, selectedPersonas, llmConfig, personaModels, scrollToEnd, showAcknowledgments, ttsProvider, defaultVoice, personaVoices, azureRegion, azureKey, elevenKey, mode, messages, contextSize, enableStreaming]);
 
   // Store onSend in ref for use in callbacks
@@ -1061,7 +1092,6 @@ export default function App() {
         personaModels={personaModels}
         defaultModel={llmConfig.defaultModel}
         inFlight={inFlight}
-        onPlayIntro={playIntro}
         busy={busy}
         generatedAvatars={generatedAvatars}
         useGeneratedAvatars={useGeneratedAvatars}
@@ -1318,6 +1348,40 @@ export default function App() {
           </label>
           <div className="tip" style={{ marginLeft: 24 }}>
             Display LLM responses incrementally as they arrive (reduces perceived latency)
+          </div>
+
+          {/* Backup/Fallback System Settings */}
+          <div className="label" style={{ marginTop: 16, fontWeight: 700 }}>📦 Backup/Fallback System</div>
+          <div className="tip">Graceful degradation when AI models are unavailable</div>
+
+          <div className="label" style={{ marginTop: 8 }}>Backup mode</div>
+          <select
+            className="text-input"
+            value={backupMode}
+            onChange={e => setBackupMode(e.target.value as BackupMode)}
+          >
+            <option value="disabled">Disabled - No backup responses</option>
+            <option value="auto">Auto - Enable after failures (recommended)</option>
+            <option value="hybrid">Hybrid - Smart blend of backup + live LLM</option>
+            <option value="always">Always - Always use backup responses</option>
+          </select>
+
+          <div style={{
+            marginTop: 8,
+            padding: 8,
+            background: backupStatus.includes('Active') ? '#fef3c7' : '#f3f4f6',
+            borderRadius: 6,
+            fontSize: 12,
+            color: '#374151'
+          }}>
+            <strong>Status:</strong> {backupStatus}
+          </div>
+
+          <div className="tip" style={{ marginTop: 4 }}>
+            {backupMode === 'disabled' && 'Backup responses are disabled. Errors will show generic fallback messages.'}
+            {backupMode === 'auto' && 'Backup mode activates automatically after 2 consecutive LLM failures and deactivates when LLM recovers.'}
+            {backupMode === 'hybrid' && 'Uses pre-generated responses for demo questions (introductions, q1-q6) with strong matches, live LLM for everything else. Best of both worlds!'}
+            {backupMode === 'always' && 'Always using pre-generated backup responses. Useful for demos or when LLM is unavailable.'}
           </div>
 
           {/* Whisper STT Settings */}

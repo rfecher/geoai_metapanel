@@ -98,6 +98,7 @@ export default function BrandedAvatar({
   const [listeningNod, setListeningNod] = useState(0);
   const [gazeOffset, setGazeOffset] = useState({ dx: 0, dy: 0 });
   const [pupilSizes, setPupilSizes] = useState({ l: 4, r: 3 });
+  const [pupilTransitionsEnabled, setPupilTransitionsEnabled] = useState(false);
 
   // Config with defaults
   const cfg = useMemo(() => ({
@@ -182,11 +183,31 @@ export default function BrandedAvatar({
   // Pupil sizes as percentage of container
   const pupilSizePct = Math.max(2.0, eyeHeightPct * 0.35 * pupilSizeScale) * eyeScale;
 
+  // Convert percentage gaze offsets to pixels relative to fixed container size
+  const gazeDxPx = useMemo(() => (gazeOffset.dx / 100) * w, [gazeOffset.dx, w]);
+  const gazeDyPx = useMemo(() => (gazeOffset.dy / 100) * h, [gazeOffset.dy, h]);
+
   // REDUCED: eyeWidthPct * 1.0 → 0.7 → 0.5 (50% total reduction) for eyelid width
   // REDUCED: eyeHeightPct / 2 → eyeHeightPct * 0.3 (40% reduction) for eyelid height
   // Eyelid dimensions as percentage
   const eyelidWidthPct = Math.max(6, Math.min(22, eyeWidthPct * 0.5 * eyeScale));
   const eyelidHeightPct = eyeHeightPct * 0.3;
+
+  // Enable pupil transitions after initial mount to prevent visible transition on first render
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setPupilTransitionsEnabled(true);
+    }, 50); // Small delay to ensure initial layout is complete
+    return () => clearTimeout(timer);
+  }, []);
+
+  // When an avatar starts speaking, temporarily disable transitions to avoid any flicker during panel activation
+  useEffect(() => {
+    if (!isSpeaking) return;
+    setPupilTransitionsEnabled(false);
+    const t = setTimeout(() => setPupilTransitionsEnabled(true), 300);
+    return () => clearTimeout(t);
+  }, [isSpeaking]);
 
   // Blink scheduler
   useEffect(() => {
@@ -225,27 +246,64 @@ export default function BrandedAvatar({
   // Head micro-movement (only affects avatar image, not container)
   useEffect(() => {
     let raf = 0;
-    let lastT = performance.now();
+    const startTime = performance.now(); // Track elapsed time from mount
+    let lastT = 0; // Start at 0 for predictable initial values
     let impulse = 0;
     let impulseVel = 0;
     let cooldown = 0;
     let lastListeningNod = listeningNod;
 
+    // Random phase offsets for variety, but we'll use elapsed time so initial frame is always zero
     const phx = Math.random() * Math.PI * 2;
     const phy = Math.random() * Math.PI * 2;
     const prt = Math.random() * Math.PI * 2;
 
-    const loop = (t: number) => {
+    // Brief startup delay to ensure component renders in neutral position first
+    const startupDelay = 150; // ms
+
+    // Natural amplitude ramp-up parameters
+    // The avatar "eases into" its idle state over 1.2-1.8 seconds
+    const rampUpDuration = 1200 + Math.random() * 600; // 1.2-1.8 seconds
+
+    let animationStarted = false;
+
+    const loop = (now: number) => {
+      const elapsed = now - startTime;
+
+      // Don't start animating until after startup delay
+      if (elapsed < startupDelay) {
+        setMotion({ tx: 0, ty: 0, rot: 0, scale: 1 });
+        raf = requestAnimationFrame(loop);
+        return;
+      }
+
+      if (!animationStarted) {
+        animationStarted = true;
+        lastT = elapsed; // Initialize lastT when animation actually starts
+      }
+
+      const t = elapsed - startupDelay; // Time since animation started (always starts at 0)
       const dt = t - lastT;
       lastT = t;
 
       const speakLevel = Math.max(smoothedAmp, isSpeaking ? 0.4 : 0);
       const idleGain = Math.max(0.15, 1 - speakLevel * 0.9);
 
-      // Multi-layer motion
-      const tx = (Math.sin(t * 0.00036 + phx) * 1.1 + Math.sin(t * 0.00093 + phx * 0.7) * 0.35) * idleGain * cfg.headSwayPx;
-      const ty = (Math.sin(t * 0.00028 + phy) * 1.0 + Math.sin(t * 0.00081 + phy * 0.6) * 0.25) * idleGain * cfg.headSwayPx;
-      const baseTilt = Math.sin(t * 0.00018 + prt) * cfg.headTiltDeg * idleGain;
+      // Natural amplitude ramp-up: gradually increase from 0 to full strength
+      // Uses a smooth ease-out curve that mimics natural settling behavior
+      let amplitudeMultiplier = 1.0;
+      if (t < rampUpDuration) {
+        const progress = t / rampUpDuration;
+        // Smooth ease-out: starts slow, accelerates, then gently settles
+        // This feels like the avatar is naturally "coming to life" rather than jumping into motion
+        amplitudeMultiplier = progress * progress * (3 - 2 * progress); // Smoothstep function
+      }
+
+      // Multi-layer motion - now t starts at 0, so initial values are determined purely by phases
+      // The amplitude multiplier scales the entire natural motion system organically
+      let tx = (Math.sin(t * 0.00036 + phx) * 1.1 + Math.sin(t * 0.00093 + phx * 0.7) * 0.35) * idleGain * cfg.headSwayPx * amplitudeMultiplier;
+      let ty = (Math.sin(t * 0.00028 + phy) * 1.0 + Math.sin(t * 0.00081 + phy * 0.6) * 0.25) * idleGain * cfg.headSwayPx * amplitudeMultiplier;
+      const baseTilt = Math.sin(t * 0.00018 + prt) * cfg.headTiltDeg * idleGain * amplitudeMultiplier;
 
       // Emphasis nod impulse
       cooldown = Math.max(0, cooldown - dt);
@@ -268,7 +326,9 @@ export default function BrandedAvatar({
       impulse = Math.max(-maxImp, Math.min(maxImp, impulse));
 
       const totalRotate = baseTilt + impulse;
-      const scale = 1.01 + Math.sin(t * 0.00022 + prt) * 0.005 * (0.6 + 0.4 * idleGain);
+      // Apply amplitude ramp-up to scale animation as well for complete consistency
+      const scaleVariation = Math.sin(t * 0.00022 + prt) * 0.005 * (0.6 + 0.4 * idleGain) * amplitudeMultiplier;
+      const scale = 1.01 + scaleVariation;
 
       setMotion({ tx, ty, rot: totalRotate, scale });
       raf = requestAnimationFrame(loop);
@@ -308,7 +368,10 @@ export default function BrandedAvatar({
       }, holdMs);
     };
 
-    schedule();
+    // Add initial delay before first gaze shift to prevent immediate movement on mount
+    const initialDelay = 1500 + Math.random() * 2000; // 1.5-3.5 seconds
+    timer = setTimeout(() => schedule(), initialDelay);
+
     return () => { alive = false; clearTimeout(timer); };
   }, [isSpeaking, cfg.gazeEnabled, cfg.gazeIntervalSec]);
 
@@ -524,16 +587,16 @@ export default function BrandedAvatar({
               className="iris-left"
               style={{
                 position: 'absolute',
-                top: `${leftPupilYPct + gazeOffset.dy}%`,
-                left: `${eyeLeftXPct + gazeOffset.dx}%`,
-                transform: 'translate(-50%, -50%)',
+                top: `${leftPupilYPct}%`,
+                left: `${eyeLeftXPct}%`,
+                transform: `translate(-50%, -50%) translate(${gazeDxPx.toFixed(2)}px, ${gazeDyPx.toFixed(2)}px)`,
                 width: `${pupilSizePct * 1.8}%`,
                 height: `${pupilSizePct * 1.8}%`,
                 borderRadius: '50%',
                 background: `radial-gradient(circle at 40% 40%, ${eyeColor}dd, ${eyeColor}cc 50%, ${eyeColor}99 80%, ${eyeColor}66 100%)`,
                 opacity: 0.65,
                 filter: 'blur(0.4px)',
-                transition: 'top 220ms ease-out, left 220ms ease-out',
+                transition: pupilTransitionsEnabled ? 'transform 220ms ease-out' : 'none',
                 pointerEvents: 'none',
                 zIndex: 9,
               }}
@@ -544,16 +607,16 @@ export default function BrandedAvatar({
               className="pupil-left"
               style={{
                 position: 'absolute',
-                top: `${leftPupilYPct + gazeOffset.dy}%`,
-                left: `${eyeLeftXPct + gazeOffset.dx}%`,
-                transform: 'translate(-50%, -50%)',
+                top: `${leftPupilYPct}%`,
+                left: `${eyeLeftXPct}%`,
+                transform: `translate(-50%, -50%) translate(${gazeDxPx.toFixed(2)}px, ${gazeDyPx.toFixed(2)}px)`,
                 width: `${pupilSizePct}%`,
                 height: `${pupilSizePct}%`,
                 borderRadius: '50%',
                 background: 'radial-gradient(circle at 40% 40%, rgba(20, 15, 10, 0.85), rgba(10, 8, 6, 0.95) 60%, rgba(0, 0, 0, 0.7) 100%)',
                 opacity: 0.75,
                 filter: 'blur(0.3px)',
-                transition: 'top 220ms ease-out, left 220ms ease-out',
+                transition: pupilTransitionsEnabled ? 'transform 220ms ease-out' : 'none',
                 pointerEvents: 'none',
                 zIndex: 10,
               }}
@@ -569,16 +632,16 @@ export default function BrandedAvatar({
               className="iris-right"
               style={{
                 position: 'absolute',
-                top: `${rightPupilYPct + gazeOffset.dy}%`,
-                left: `${eyeRightXPct + gazeOffset.dx}%`,
-                transform: 'translate(-50%, -50%)',
+                top: `${rightPupilYPct}%`,
+                left: `${eyeRightXPct}%`,
+                transform: `translate(-50%, -50%) translate(${gazeDxPx.toFixed(2)}px, ${gazeDyPx.toFixed(2)}px)`,
                 width: `${pupilSizePct * 1.8}%`,
                 height: `${pupilSizePct * 1.8}%`,
                 borderRadius: '50%',
                 background: `radial-gradient(circle at 40% 40%, ${eyeColor}dd, ${eyeColor}cc 50%, ${eyeColor}99 80%, ${eyeColor}66 100%)`,
                 opacity: 0.65,
                 filter: 'blur(0.4px)',
-                transition: 'top 220ms ease-out, left 220ms ease-out',
+                transition: pupilTransitionsEnabled ? 'transform 220ms ease-out' : 'none',
                 pointerEvents: 'none',
                 zIndex: 9,
               }}
@@ -589,16 +652,16 @@ export default function BrandedAvatar({
               className="pupil-right"
               style={{
                 position: 'absolute',
-                top: `${rightPupilYPct + gazeOffset.dy}%`,
-                left: `${eyeRightXPct + gazeOffset.dx}%`,
-                transform: 'translate(-50%, -50%)',
+                top: `${rightPupilYPct}%`,
+                left: `${eyeRightXPct}%`,
+                transform: `translate(-50%, -50%) translate(${gazeDxPx.toFixed(2)}px, ${gazeDyPx.toFixed(2)}px)`,
                 width: `${pupilSizePct}%`,
                 height: `${pupilSizePct}%`,
                 borderRadius: '50%',
                 background: 'radial-gradient(circle at 40% 40%, rgba(20, 15, 10, 0.85), rgba(10, 8, 6, 0.95) 60%, rgba(0, 0, 0, 0.7) 100%)',
                 opacity: 0.75,
                 filter: 'blur(0.3px)',
-                transition: 'top 220ms ease-out, left 220ms ease-out',
+                transition: pupilTransitionsEnabled ? 'transform 220ms ease-out' : 'none',
                 pointerEvents: 'none',
                 zIndex: 10,
               }}

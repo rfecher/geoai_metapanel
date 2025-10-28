@@ -1,3 +1,13 @@
+import {
+  shouldUseBackup,
+  isHybridMode,
+  shouldUseBackupInHybridMode,
+  getBackupResponseWithFallback,
+  recordSuccess,
+  recordFailure,
+  getBackupMatchConfidence
+} from './backup';
+
 export type ChatMessage = {
   role: 'system' | 'user' | 'assistant';
   content: string;
@@ -8,6 +18,7 @@ export type ChatRequest = {
   messages: ChatMessage[];
   stream?: boolean;
   options?: Record<string, unknown>;
+  personaId?: string; // Optional persona ID for backup responses
 };
 
 export type LLMProvider = 'ollama' | 'lmstudio' | 'openai' | 'custom';
@@ -40,32 +51,100 @@ export const LLM_PRESETS: Record<string, LLMConfig> = {
 };
 
 /**
+ * Extract the user's question from the message history
+ * Returns the last user message content
+ */
+function extractUserQuestion(messages: ChatMessage[]): string {
+  // Find the last user message
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role === 'user') {
+      return messages[i].content;
+    }
+  }
+  // Fallback if no user message found
+  return 'Please share your perspective on this topic.';
+}
+
+/**
  * Universal chat function that works with Ollama, LM Studio, and OpenAI-compatible APIs
+ * Includes automatic backup/fallback support when live models are unavailable
+ * Supports hybrid mode: uses pre-generated responses for strong matches, live LLM otherwise
  */
 export async function chatWithLLM(config: LLMConfig, req: ChatRequest): Promise<string> {
   const { provider, baseUrl, apiKey } = config;
 
+  // Extract user question for backup/hybrid mode checks
+  const userQuestion = req.personaId ? extractUserQuestion(req.messages) : '';
+
+  // Bypass LLM entirely for recognized pre-generated demo questions (always use backup)
+  if (req.personaId) {
+    const match = getBackupMatchConfidence(userQuestion);
+    if (match?.questionId && match.confidence >= 0.75) {
+      console.log('🎯 Recognized demo question - using pre-generated response (no LLM)');
+      return await getBackupResponseWithFallback(userQuestion, req.personaId, false);
+    }
+  }
+
+
+  // Check if backup mode is active (always or auto-enabled)
+  if (shouldUseBackup() && req.personaId) {
+    console.log('📦 Backup mode active - using pre-generated response');
+    return await getBackupResponseWithFallback(userQuestion, req.personaId, false);
+  }
+
+  // Check if hybrid mode is active and question matches strongly
+  if (isHybridMode() && req.personaId && shouldUseBackupInHybridMode(userQuestion)) {
+    console.log('🔀 Hybrid mode: Strong match detected - using pre-generated response');
+    return await getBackupResponseWithFallback(userQuestion, req.personaId, false);
+  }
+
+  // If hybrid mode but weak/no match, fall through to live LLM
+  if (isHybridMode() && req.personaId) {
+    console.log('🔀 Hybrid mode: Weak/no match - using live LLM');
+  }
+
   try {
+    let response: string;
     if (provider === 'ollama') {
-      return await chatWithOllama(baseUrl, req);
+      response = await chatWithOllama(baseUrl, req);
     } else {
       // LM Studio, OpenAI, and other OpenAI-compatible APIs
-      return await chatWithOpenAICompatible(baseUrl, apiKey, req);
+      response = await chatWithOpenAICompatible(baseUrl, apiKey, req);
     }
+
+    // Record success to reset failure counter
+    recordSuccess();
+    return response;
   } catch (e) {
     console.error(`❌ ${provider} error:`, e);
     console.error('Config:', { provider, baseUrl, model: req.model });
     console.error('Full error:', e instanceof Error ? e.message : String(e));
+
+    // Record failure for backup system
+    recordFailure();
+
+    // Try to use backup response if persona ID is available
+    if (req.personaId) {
+      console.log('📦 LLM failed - attempting to use backup response');
+      const userQuestion = extractUserQuestion(req.messages);
+      return await getBackupResponseWithFallback(userQuestion, req.personaId, false);
+    }
+
+    // Ultimate fallback if no persona ID
     return '"(Offline fallback) Here is a concise perspective based on my persona."';
   }
 }
 
 /**
  * Streaming chat function that yields partial responses as they arrive
+ * Includes automatic backup/fallback support when live models are unavailable
+ * Supports hybrid mode: uses pre-generated responses for strong matches, live LLM otherwise
  * @param config LLM configuration
  * @param req Chat request
  * @param onChunk Callback invoked for each chunk of text
  * @returns Promise that resolves with the complete response text
+
+
  */
 export async function chatWithLLMStreaming(
   config: LLMConfig,
@@ -74,17 +153,65 @@ export async function chatWithLLMStreaming(
 ): Promise<string> {
   const { provider, baseUrl, apiKey } = config;
 
+  // Extract user question for backup/hybrid mode checks
+  const userQuestion = req.personaId ? extractUserQuestion(req.messages) : '';
+
+  // Bypass LLM entirely for recognized pre-generated demo questions (always use backup, streaming)
+  if (req.personaId) {
+    const match = getBackupMatchConfidence(userQuestion);
+    if (match?.questionId && match.confidence >= 0.75) {
+      console.log('🎯 Recognized demo question - using pre-generated response (stream, no LLM)');
+      return await getBackupResponseWithFallback(userQuestion, req.personaId, true, onChunk);
+    }
+  }
+
+
+  // Check if backup mode is active (always or auto-enabled)
+  if (shouldUseBackup() && req.personaId) {
+    console.log('📦 Backup mode active - using pre-generated response with streaming simulation');
+    return await getBackupResponseWithFallback(userQuestion, req.personaId, true, onChunk);
+  }
+
+  // Check if hybrid mode is active and question matches strongly
+  if (isHybridMode() && req.personaId && shouldUseBackupInHybridMode(userQuestion)) {
+    console.log('🔀 Hybrid mode: Strong match detected - using pre-generated response with streaming');
+    return await getBackupResponseWithFallback(userQuestion, req.personaId, true, onChunk);
+  }
+
+  // If hybrid mode but weak/no match, fall through to live LLM
+  if (isHybridMode() && req.personaId) {
+    console.log('🔀 Hybrid mode: Weak/no match - using live LLM streaming');
+    // Continue to live LLM below
+  }
+
   try {
+    let response: string;
     if (provider === 'ollama') {
-      return await chatWithOllamaStreaming(baseUrl, req, onChunk);
+      response = await chatWithOllamaStreaming(baseUrl, req, onChunk);
     } else {
       // LM Studio, OpenAI, and other OpenAI-compatible APIs
-      return await chatWithOpenAICompatibleStreaming(baseUrl, apiKey, req, onChunk);
+      response = await chatWithOpenAICompatibleStreaming(baseUrl, apiKey, req, onChunk);
     }
+
+    // Record success to reset failure counter
+    recordSuccess();
+    return response;
   } catch (e) {
     console.error(`❌ ${provider} streaming error:`, e);
     console.error('Config:', { provider, baseUrl, model: req.model });
     console.error('Full error:', e instanceof Error ? e.message : String(e));
+
+    // Record failure for backup system
+    recordFailure();
+
+    // Try to use backup response if persona ID is available
+    if (req.personaId) {
+      console.log('📦 LLM streaming failed - attempting to use backup response');
+      const userQuestion = extractUserQuestion(req.messages);
+      return await getBackupResponseWithFallback(userQuestion, req.personaId, true, onChunk);
+    }
+
+    // Ultimate fallback if no persona ID
     const fallback = '"(Offline fallback) Here is a concise perspective based on my persona."';
     onChunk(fallback);
     return fallback;

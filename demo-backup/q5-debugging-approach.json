@@ -1,0 +1,25 @@
+{
+  "question": "You're debugging a production system where an open-source LLM is generating inconsistent results when processing GeoJSON features with complex geometries. What's your systematic troubleshooting approach?",
+  "responses": {
+    "maya": {
+      "content": "First, I examine whether the inconsistencies correlate with specific geographic regions or cultural contexts—LLMs often fail on place names or land use categories outside their training data. My debugging approach includes testing with traditional territory boundaries and Indigenous place names to identify cultural bias in geometric processing. I validate results against community knowledge holders who understand local geographic features. The systematic approach involves creating test datasets that represent diverse geographic and cultural contexts, not just technical edge cases.",
+      "timestamp": "2024-01-15T10:04:00Z"
+    },
+    "otto": {
+      "content": "Systematic debugging starts with geometric validation—I check coordinate precision, topology consistency, and CRS transformation accuracy using PostGIS validation functions. The approach includes isolating complex geometry types (multipolygons, holes, self-intersections) to identify specific failure patterns. I implement automated testing with known-good reference geometries and measure deviation using Hausdorff distance and area calculations. Logging includes detailed geometric metadata: vertex counts, coordinate ranges, and spatial relationship complexity to correlate with model performance degradation.",
+      "timestamp": "2024-01-15T10:04:05Z"
+    },
+    "sarah": {
+      "content": "I start with reproducibility testing—ensuring the same GeoJSON input produces consistent outputs across different model runs and hardware configurations. The debugging workflow includes systematic input simplification: reducing coordinate precision, simplifying geometries with Douglas-Peucker algorithms, and testing with canonical geometry examples. I implement comprehensive logging of model internals: attention weights, token processing patterns, and intermediate representations. Community debugging benefits from shared test cases and collaborative validation using open datasets like Natural Earth and OpenStreetMap.",
+      "timestamp": "2024-01-15T10:04:10Z"
+    },
+    "marcus": {
+      "content": "Production debugging requires systematic performance profiling—I measure inference latency, memory usage, and accuracy metrics across different geometry complexity levels. The approach includes A/B testing with different model configurations, prompt engineering variations, and preprocessing pipelines. I implement automated anomaly detection that flags geometric outputs with unusual characteristics: extreme coordinate values, invalid topologies, or significant deviations from input geometry properties. Root cause analysis includes correlation analysis between geometry complexity metrics and model confidence scores.",
+      "timestamp": "2024-01-15T10:04:15Z"
+    },
+    "jessica": {
+      "content": "Security-focused debugging examines whether inconsistencies indicate potential adversarial inputs or model manipulation attempts—complex geometries can be attack vectors. My systematic approach includes input sanitization validation, geometric bounds checking, and anomaly detection for unusual coordinate patterns. I implement comprehensive audit logging that tracks all geometric transformations and model decisions for forensic analysis. The debugging process includes testing with known adversarial geometric inputs to ensure model robustness against potential security threats while maintaining operational accuracy.",
+      "timestamp": "2024-01-15T10:04:20Z"
+    }
+  }
+}

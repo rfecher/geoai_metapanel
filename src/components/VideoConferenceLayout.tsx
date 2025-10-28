@@ -13,7 +13,6 @@ type VideoConferenceLayoutProps = {
   personaModels: Record<string, string>;
   defaultModel: string;
   inFlight: Set<string>;
-  onPlayIntro: (personaId: string) => void;
   busy: boolean;
   generatedAvatars?: Record<string, string>;
   useGeneratedAvatars?: boolean;
@@ -29,13 +28,17 @@ export default function VideoConferenceLayout({
   personaModels,
   defaultModel,
   inFlight,
-  onPlayIntro,
   busy,
   generatedAvatars = {},
   useGeneratedAvatars = false,
   enableListeningAnimations = true,
 }: VideoConferenceLayoutProps) {
   const speakingPersona = personas.find(p => p.id === speakingPersonaId);
+
+  // Check if all personas use the same model (to hide redundant model display)
+  const allModels = personas.map(p => personaModels[p.id] || defaultModel);
+  const uniqueModels = new Set(allModels);
+  const showModelBadges = uniqueModels.size > 1;
 
 
 
@@ -64,9 +67,11 @@ export default function VideoConferenceLayout({
               </div>
               <div className="speaker-bio">{speakingPersona.shortBio}</div>
               <div className="speaker-badges">
-                <span className="badge model">
-                  {personaModels[speakingPersona.id] || defaultModel}
-                </span>
+                {showModelBadges && (
+                  <span className="badge model">
+                    {personaModels[speakingPersona.id] || defaultModel}
+                  </span>
+                )}
                 {inFlight.has(speakingPersona.id) && (
                   <span className="badge thinking">thinking</span>
                 )}
@@ -95,16 +100,6 @@ export default function VideoConferenceLayout({
                 <div className="thumbnail-info">
                   <div className="thumbnail-name">{p.name}</div>
                   {thinking && <span className="badge thinking mini">thinking</span>}
-                  {p.intro && (
-                    <button
-                      className="intro-button mini"
-                      onClick={() => onPlayIntro(p.id)}
-                      disabled={busy}
-                      title={`Play ${p.name}'s introduction`}
-                    >
-                      🎤
-                    </button>
-                  )}
                 </div>
               </div>
             );
@@ -142,18 +137,8 @@ export default function VideoConferenceLayout({
                 </div>
                 <div className="grid-bio">{p.shortBio}</div>
                 <div className="grid-badges">
-                  <span className="badge model mini">{usedModel}</span>
+                  {showModelBadges && <span className="badge model mini">{usedModel}</span>}
                   {thinking && <span className="badge thinking mini">thinking</span>}
-                  {p.intro && (
-                    <button
-                      className="intro-button mini"
-                      onClick={() => onPlayIntro(p.id)}
-                      disabled={busy || speaking}
-                      title={`Play ${p.name}'s introduction`}
-                    >
-                      🎤
-                    </button>
-                  )}
                 </div>
               </div>
             </div>

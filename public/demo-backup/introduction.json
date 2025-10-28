@@ -1,0 +1,26 @@
+{
+  "question": "Can you introduce yourself and tell me about your background?",
+  "responses": {
+    "maya": {
+      "content": "Hello. I'm Maya Ríos, Senior Policy Advisor with the Assembly of First Nations. I'm Cree Nation, and before policy work, I spent 15 years as Emergency Response Director with the Canadian Red Cross across northern and Arctic communities. I've coordinated evacuations during wildfires and floods in remote locations, and I've seen firsthand how poor geospatial data and ignored traditional knowledge can cost lives. I bring that field experience to Indigenous data sovereignty work now, ensuring our communities have control over spatial data about our lands and peoples. I'm here to discuss both the ethical and operational realities of geospatial AI.",
+      "timestamp": "2024-01-15T09:00:00Z"
+    },
+    "otto": {
+      "content": "Good day. Otto Reinhardt here, Professor Emeritus from Vienna University of Technology. I've spent 43 years studying cartographic projections and spatial reference systems, and frankly, I'm concerned about what I'm seeing. We cannot simply abandon proper mathematical rigor and established standards in this rush toward so-called artificial intelligence.",
+      "timestamp": "2024-01-15T09:00:05Z"
+    },
+    "sarah": {
+      "content": "Hi everyone! Sarah Chen here, Principal Research Scientist at Mozilla Foundation. I spent years at Google working on Earth Engine before moving to open source. I'm passionate about building transparent, community-driven geospatial AI tools that anyone can use, audit, and improve. Looking forward to this discussion!",
+      "timestamp": "2024-01-15T09:00:10Z"
+    },
+    "marcus": {
+      "content": "Marcus Webb here, VP of Geospatial AI at Palantir. Look, I spent 12 years at NSA before moving to the private sector, and I've seen what works and what doesn't. Our platforms are deployed right now in disaster response, counter-terrorism, critical infrastructure protection. We've prevented real threats, saved real lives. I'm here to talk about what actually works in the field, not just theory.",
+      "timestamp": "2024-01-15T09:00:15Z"
+    },
+    "jessica": {
+      "content": "Lieutenant Colonel Jessica Hayes, Director of Geospatial Intelligence Division, US Space Force. I've served 18 years in military intelligence, in Iraq, Afghanistan, and INDO PAY COM. My job is to deliver operational capabilities that protect both national security and democratic values. And I'll be direct with you, our adversaries aren't waiting for perfect solutions, and neither can we.",
+      "timestamp": "2024-01-15T09:00:20Z"
+    }
+  }
+}
+

@@ -1,0 +1,25 @@
+{
+  "question": "The PostGIS community is considering developing a domain-specific LLM for spatial SQL generation and geospatial reasoning. What would your technical roadmap look like, and what are the resource requirements?",
+  "responses": {
+    "maya": {
+      "content": "Community governance must be established first—we need inclusive decision-making processes that ensure diverse geographic and cultural representation in model development. The technical roadmap should prioritize training data that includes spatial queries from Indigenous mapping projects and community-based natural resource management. Resource requirements include distributed computing infrastructure that communities can contribute to and benefit from, not just centralized development. We need sustainable funding models that don't create dependencies on corporate sponsors who might influence model development priorities.",
+      "timestamp": "2024-01-15T10:03:00Z"
+    },
+    "otto": {
+      "content": "The roadmap requires systematic training data curation from existing PostGIS documentation, spatial SQL examples, and standardized geospatial operations. Phase 1: collect and annotate 100K+ spatial query examples with proper geometric validation. Phase 2: fine-tune existing code models like CodeLlama on spatial SQL syntax and PostGIS function semantics. Resource requirements include 200+ GPU hours for training, distributed annotation infrastructure, and ongoing model validation against OGC compliance standards. We need rigorous testing frameworks that verify generated SQL produces geometrically correct results across different coordinate systems.",
+      "timestamp": "2024-01-15T10:03:05Z"
+    },
+    "sarah": {
+      "content": "Open development infrastructure is essential—we should use collaborative platforms like Hugging Face for model hosting and community contributions. The roadmap includes building training datasets from PostGIS mailing lists, Stack Overflow spatial queries, and open-source GIS project repositories. Resource requirements: 500GB+ of curated spatial SQL examples, distributed training across community GPU resources, and continuous integration pipelines for model testing. We need sustainable hosting that doesn't depend on corporate cloud providers—perhaps federated infrastructure where community members contribute computing resources in exchange for model access.",
+      "timestamp": "2024-01-15T10:03:10Z"
+    },
+    "marcus": {
+      "content": "Production-ready spatial SQL generation requires extensive validation infrastructure—we need automated testing against real-world spatial databases with performance benchmarking. The roadmap should include enterprise integration considerations: API design for existing GIS workflows, security frameworks for database access, and scalability testing for high-volume spatial queries. Resource requirements include dedicated infrastructure for continuous model training, comprehensive spatial database test environments, and professional development resources. We should consider hybrid approaches that combine community-developed models with enterprise-grade deployment and support infrastructure.",
+      "timestamp": "2024-01-15T10:03:15Z"
+    },
+    "jessica": {
+      "content": "Security considerations are paramount for any model that generates database queries—we need robust input validation and SQL injection prevention mechanisms built into the model architecture. The roadmap must include security auditing phases and controlled deployment environments for testing. Resource requirements include secure development infrastructure, penetration testing resources, and compliance validation for government and defense applications. We should develop security-hardened versions alongside community models, ensuring spatial SQL generation meets operational security requirements while maintaining open-source development principles.",
+      "timestamp": "2024-01-15T10:03:20Z"
+    }
+  }
+}
