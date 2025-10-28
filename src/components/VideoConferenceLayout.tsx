@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Persona } from '../data/personas';
 import BrandedAvatar from "./BrandedAvatar";
 
@@ -17,6 +17,7 @@ type VideoConferenceLayoutProps = {
   generatedAvatars?: Record<string, string>;
   useGeneratedAvatars?: boolean;
   enableListeningAnimations?: boolean;
+  meetingMode?: boolean;
 };
 
 export default function VideoConferenceLayout({
@@ -32,6 +33,7 @@ export default function VideoConferenceLayout({
   generatedAvatars = {},
   useGeneratedAvatars = false,
   enableListeningAnimations = true,
+  meetingMode = false,
 }: VideoConferenceLayoutProps) {
   const speakingPersona = personas.find(p => p.id === speakingPersonaId);
 
@@ -39,8 +41,19 @@ export default function VideoConferenceLayout({
   const allModels = personas.map(p => personaModels[p.id] || defaultModel);
   const uniqueModels = new Set(allModels);
   const showModelBadges = uniqueModels.size > 1;
+  // Responsive breakpoint for sizing avatar variants
+  const [isSmallScreen, setIsSmallScreen] = useState(false);
+  const gridRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const onResize = () => setIsSmallScreen(window.innerWidth < 768);
+    onResize();
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
 
-
+  // Choose sizes conditionally based on meeting mode and screen size
+  const speakerSize: 'large' | 'xlarge' = meetingMode ? (isSmallScreen ? 'large' : 'xlarge') : 'large';
+  const gridSize: 'medium' | 'large' = meetingMode ? (isSmallScreen ? 'medium' : 'large') : 'medium';
 
   if (layoutMode === 'speaker' && speakingPersona) {
     // Speaker mode: Large speaker with small thumbnails
@@ -54,7 +67,7 @@ export default function VideoConferenceLayout({
               <BrandedAvatar
                 personaId={speakingPersona.id}
                 name={speakingPersona.name}
-                size="large"
+                size={speakerSize}
                 isSpeaking={true}
                 audioAmplitude={audioAmplitudes[speakingPersona.id] || 0}
                 visemePose={visemesByPersona[speakingPersona.id]}
@@ -105,6 +118,9 @@ export default function VideoConferenceLayout({
             );
           })}
         </div>
+        <div className="brand-corner-logo brand-speaker-overlay">
+          <img src="/avatars/vantor.svg" alt="Vantor" className="brand-logo" />
+        </div>
       </div>
     );
   }
@@ -112,7 +128,7 @@ export default function VideoConferenceLayout({
   // Grid mode: Equal-sized tiles for all participants
   return (
     <div className="video-conference grid-mode">
-      <div className="grid-container">
+      <div ref={gridRef} className="grid-container">
         {personas.map(p => {
           const speaking = speakingPersonaId === p.id;
           const thinking = inFlight.has(p.id);
@@ -123,7 +139,7 @@ export default function VideoConferenceLayout({
                 <BrandedAvatar
                   personaId={p.id}
                   name={p.name}
-                  size="medium"
+                  size={gridSize}
                   isSpeaking={speaking}
                   isListening={enableListeningAnimations && !speaking && !!speakingPersonaId}
                   audioAmplitude={audioAmplitudes[p.id] || 0}
@@ -144,8 +160,13 @@ export default function VideoConferenceLayout({
             </div>
           );
         })}
+        <div className="brand-corner-logo">
+          <img src="/avatars/vantor.svg" alt="Vantor" className="brand-logo" />
+        </div>
+
       </div>
     </div>
   );
+
 }
 

@@ -3,6 +3,8 @@ import MessageBubble from './components/MessageBubble';
 import LLMProviderSelector from './components/LLMProviderSelector';
 import VideoConferenceLayout from './components/VideoConferenceLayout';
 import Settings from './components/Settings';
+import CaptionsOverlay from './components/CaptionsOverlay';
+
 import { personas } from './data/personas';
 import { chatWithLLM, chatWithLLMStreaming, LLMConfig, LLM_PRESETS, ChatMessage } from './services/llm';
 
@@ -97,6 +99,16 @@ export default function App() {
 
   // Video conference layout mode
   const [visemeByPersona, setVisemeByPersona] = useState<Record<string, { viseme: string; open: number; wide: number; round: number }>>({});
+
+  // Meeting-first UI and captions
+  const [meetingMode, setMeetingMode] = useState(true);
+  const [captionsEnabled, setCaptionsEnabled] = useState(false);
+  const [activeCaption, setActiveCaption] = useState<{
+    personaId: string;
+    personaName: string;
+    color: string;
+    text: string;
+  } | null>(null);
 
   const [layoutMode, setLayoutMode] = useState<'speaker' | 'grid'>('grid');
 
@@ -390,6 +402,14 @@ export default function App() {
     };
     ttsChain = ttsChain.then(async () => {
       if (personaId) setSpeakingId(personaId);
+      // If captions are enabled, show this utterance as a live caption
+      if (personaId && captionsEnabled) {
+        const found = selectedPersonasMerged.find(x => x.id === personaId) || personas.find(x => x.id === personaId);
+        const personaName = found?.name ?? 'Assistant';
+        const color = found?.color ?? '#ffffff';
+        setActiveCaption({ personaId, personaName, color, text });
+      }
+
       try {
         if (preGeneratedAudioPromise) {
           // Wait for pre-generation to complete (may already be done)
@@ -407,11 +427,16 @@ export default function App() {
           await ttsSpeak(text, settings, personaId);
         }
       } finally {
-        if (personaId) setSpeakingId(prev => (prev === personaId ? null : prev));
+        if (personaId) {
+          setSpeakingId(prev => (prev === personaId ? null : prev));
+          // Clear caption only if it belongs to this persona
+          setActiveCaption(prev => (prev && prev.personaId === personaId ? null : prev));
+        }
       }
+
     });
     return ttsChain;
-  }, [ttsProvider, defaultVoice, personaVoices, azureRegion, azureKey, elevenKey]);
+  }, [ttsProvider, defaultVoice, personaVoices, azureRegion, azureKey, elevenKey, captionsEnabled, selectedPersonasMerged]);
 
   const skipCurrentSpeaker = useCallback(() => {
     console.log('🛑 Skip button clicked - skipping current speaker only');
@@ -421,6 +446,10 @@ export default function App() {
 
     // Clear the speaking indicator
     setSpeakingId(null);
+
+    // Also clear live captions if any
+    setActiveCaption(null);
+
 
     // Don't reset the chain - let the next speaker continue
   }, []);
@@ -1067,19 +1096,9 @@ export default function App() {
   }, [onSend]);
 
   return (
-    <div className="app stage">
+    <div className={`app stage ${meetingMode ? 'meeting-mode' : ''}`}>
       <div className="header">
         <div className="title">GeoAI MetaPanel</div>
-        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-          <button
-            className="settings"
-            onClick={() => setLayoutMode(m => m === 'grid' ? 'speaker' : 'grid')}
-            title="Toggle layout mode"
-          >
-            {layoutMode === 'grid' ? '🎬 Speaker' : '📊 Grid'}
-          </button>
-          <button className="settings" onClick={() => setShowSettings(s => !s)}>{showSettings ? 'Close' : 'Settings'}</button>
-        </div>
       </div>
 
       {/* Video Conference Layout */}
@@ -1096,22 +1115,107 @@ export default function App() {
         generatedAvatars={generatedAvatars}
         useGeneratedAvatars={useGeneratedAvatars}
         enableListeningAnimations={enableListeningAnimations}
+        meetingMode={meetingMode}
+
       />
 
-      {/* Skip button overlay when someone is speaking */}
-      {speakingPersona && (
-        <div style={{
-          position: 'absolute',
-          top: '80px',
-          right: '20px',
-          zIndex: 1000
-        }}>
+      {/* Live captions overlay (toggleable, with transitions) */}
+      {meetingMode && captionsEnabled && (
+        <CaptionsOverlay
+          visible={!!activeCaption}
+          text={activeCaption?.text || ''}
+          personaName={activeCaption?.personaName || ''}
+          color={activeCaption?.color || '#fff'}
+        />
+      )}
+
+      {/* Meeting toolbar */}
+      <div className="meeting-toolbar" role="toolbar" aria-label="Meeting controls">
           <button
-            className="skip-button"
-            onClick={skipCurrentSpeaker}
-            title="Skip current speaker"
+            className={`toolbar-button mic ${isRecording ? 'unmuted' : 'muted'} ${isSpeaking ? 'speaking' : ''}`}
+            onClick={onMicrophoneClick}
+            disabled={busy || isTranscribing || !whisperAvailable}
+            aria-pressed={isRecording}
+            title={isRecording ? (isSpeaking ? 'Speaking detected... click to stop' : 'Listening... click to stop') : 'Click to start voice input'}
           >
-            Skip ⏭
+            <span className="icon" aria-hidden>🎤</span>
+            <span>{isRecording ? 'On' : 'Off'}</span>
+          </button>
+
+          <div className="toolbar-sep" aria-hidden></div>
+
+          {/* View controls: mode, layout, captions */}
+          <button
+            className="toolbar-button mode"
+            onClick={() => setMeetingMode(m => !m)}
+            aria-pressed={meetingMode}
+            title="Toggle meeting vs chat UI"
+          >
+            <span className="icon" aria-hidden>{meetingMode ? '💬' : '🎥'}</span>
+            <span>{meetingMode ? 'Chat' : 'Meeting'}</span>
+          </button>
+
+          <button
+            className="toolbar-button layout"
+            onClick={() => setLayoutMode(m => m === 'grid' ? 'speaker' : 'grid')}
+            title="Toggle layout mode"
+          >
+            <span className="icon" aria-hidden>{layoutMode === 'grid' ? '🎬' : '🔳'}</span>
+            <span>{layoutMode === 'grid' ? 'Speaker' : 'Grid'}</span>
+          </button>
+
+          <button
+            className={`toolbar-button cc ${captionsEnabled ? 'active' : ''}`}
+            onClick={() => setCaptionsEnabled(c => !c)}
+            aria-pressed={captionsEnabled}
+            title="Toggle live captions"
+          >
+            <span className="icon" aria-hidden>CC</span>
+            <span>{captionsEnabled ? 'On' : 'Off'}</span>
+          </button>
+
+          <div className="toolbar-sep" aria-hidden></div>
+
+          {/* Settings */}
+          <button
+            className="toolbar-button settings"
+            onClick={() => setShowSettings(s => !s)}
+            aria-pressed={showSettings}
+            title="Open settings"
+          >
+            <span className="icon" aria-hidden>⚙️</span>
+            <span>Settings</span>
+          </button>
+
+          {speakingPersona && (
+            <>
+              <div className="toolbar-sep" aria-hidden></div>
+              <button
+                className="toolbar-button skip"
+                onClick={skipCurrentSpeaker}
+                title="Skip current speaker"
+              >
+                <span className="icon" aria-hidden>⏭</span>
+                <span>Skip</span>
+              </button>
+            </>
+          )}
+        </div>
+
+      {/* Floating mic control for meeting mode */}
+      {meetingMode && whisperAvailable && (
+        <div className="meeting-mic-floating">
+          <button
+            className={`mic-button large ${isRecording ? (isSpeaking ? 'recording speaking' : 'recording') : ''}`}
+            onClick={onMicrophoneClick}
+            disabled={busy || isTranscribing}
+            title={
+              isRecording
+                ? (isSpeaking ? 'Speaking detected... (stops automatically when you finish)' : 'Listening... (speak now or click to stop)')
+                : 'Click to start voice input (auto-stops when you finish speaking)'
+            }
+          >
+            {isTranscribing ? '⏳' : isRecording ? (isSpeaking ? '🔴' : '⏹️') : '🎤'}
           </button>
         </div>
       )}

@@ -12,7 +12,7 @@ export type VisemePose = { viseme: string; open: number; wide: number; round: nu
 export type BrandedAvatarProps = {
   personaId: string;
   name: string;
-  size?: 'small' | 'medium' | 'large';
+  size?: 'small' | 'medium' | 'large' | 'xlarge';
   isSpeaking?: boolean;
   isListening?: boolean;
   audioAmplitude?: number;
@@ -63,9 +63,10 @@ export type BrandedAvatarProps = {
 };
 
 const SIZE = {
-  small: { w: 80, h: 80 },
-  medium: { w: 160, h: 160 },
-  large: { w: 320, h: 320 },
+  small: { w: 110, h: 110 },
+  medium: { w: 240, h: 240 },
+  large: { w: 384, h: 384 },
+  xlarge: { w: 512, h: 512 },
 } as const;
 
 const BACKDROP_URL = '/avatars/unsplash-image-isg8AL7-6uk.png';
