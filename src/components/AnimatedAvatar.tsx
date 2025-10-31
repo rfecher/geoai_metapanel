@@ -18,6 +18,7 @@ type AnimatedAvatarProps = {
     mouthSmoothing?: number;
     minOpen?: number;
     maxOpen?: number;
+    mouthCavityThreshold?: number; // 0..0.5 (default 0.1) - lipOpen threshold below which mouth cavity is hidden
     blinkRateSec?: number;
     blinkJitterPct?: number;
     breatheScale?: number;
@@ -58,6 +59,7 @@ export default function AnimatedAvatar({
   }, [personaId, faceAnchorsProp]);
 
   const mouthAnchor = anchors?.mouth || { xPct: 50, yPct: 72, sizePct: 36 };
+  const mouthRotationDeg = mouthAnchor.rotationDeg ?? 0; // Rotation for asymmetric/smirk mouths
   const wideRef = useRef(0);
   const roundRef = useRef(0);
 
@@ -78,6 +80,7 @@ export default function AnimatedAvatar({
     release: Math.min(Math.max((animationConfig as any)?.release ?? 0.9, 0), 0.999),
     minOpen: animationConfig?.minOpen ?? 0,
     maxOpen: animationConfig?.maxOpen ?? 1,
+    mouthCavityThreshold: Math.max(0, Math.min(0.5, (animationConfig as any)?.mouthCavityThreshold ?? 0.1)),
     blinkRateSec: animationConfig?.blinkRateSec ?? 4,
     blinkJitterPct: animationConfig?.blinkJitterPct ?? 0.5,
     blinkDurationMs: Math.max(80, Math.min(220, (animationConfig as any)?.blinkDurationMs ?? 140)),
@@ -459,7 +462,8 @@ export default function AnimatedAvatar({
               position: 'absolute',
               top: `${mouthAnchor.yPct}%`,
               left: `${mouthAnchor.xPct}%`,
-              transform: 'translate(-50%, -50%)',
+              transform: `translate(-50%, -50%) rotate(${mouthRotationDeg}deg)`,
+              transformOrigin: 'center center',
               width: `${Math.max(16, mouthAnchor.sizePct * 0.70 * cfg.mouthScale)}%`,
               pointerEvents: 'none',
               opacity: 0.9,
@@ -488,10 +492,34 @@ export default function AnimatedAvatar({
                 <stop offset="100%" stopColor="rgba(120, 60, 60, 0.05)" />
               </linearGradient>
 
+              {/* Lip line gradient: subtle shadow for closed mouth appearance */}
+              <linearGradient id="lipLine" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="rgba(58, 36, 32, 0)" />
+                <stop offset="35%" stopColor="rgba(45, 27, 24, 0.45)" />
+                <stop offset="50%" stopColor="rgba(31, 18, 16, 0.65)" />
+                <stop offset="65%" stopColor="rgba(45, 27, 24, 0.45)" />
+                <stop offset="100%" stopColor="rgba(58, 36, 32, 0)" />
+              </linearGradient>
+
               <clipPath id="mouthClip">
                 <ellipse cx="50" cy="25" rx="40" ry="15" />
               </clipPath>
             </defs>
+
+            {/* Subtle lip line: visible when mouth is closed to suggest lip seam */}
+            <ellipse
+              cx="50"
+              cy={25}
+              rx={18}
+              ry={0.6}
+              fill="url(#lipLine)"
+              opacity={
+                lipOpen < cfg.mouthCavityThreshold
+                  ? Math.max(0.5, 0.75 - (lipOpen / cfg.mouthCavityThreshold) * 0.25)
+                  : Math.max(0, 0.5 - ((lipOpen - cfg.mouthCavityThreshold) / (1 - cfg.mouthCavityThreshold)) * 0.5)
+              }
+              style={{ transition: 'opacity 0.12s ease-out' }}
+            />
 
             {/* Outer lip area - natural lip color (ENLARGED for more prominence) */}
             <ellipse
@@ -505,17 +533,20 @@ export default function AnimatedAvatar({
               style={{ transition: 'all 0.06s ease-out' }}
             />
 
-            {/* Inner mouth opening - dark for depth (REDUCED for less dominance) */}
-            <ellipse
-              cx="50"
-              cy={25 + lipOpen * 4}
-              rx={5 + lipWide * 10 + (1 - lipRound) * 2}
-              ry={0.8 + lipOpen * 9 + lipRound * 5}
-              fill="url(#mouthInner)"
-              clipPath="url(#mouthClip)"
-              opacity={0.7 + lipOpen * 0.2}
-              style={{ transition: 'all 0.06s ease-out' }}
-            />
+            {/* Inner mouth opening - dark for depth (only visible when lipOpen exceeds threshold) */}
+            {/* Reshaped to be more horizontally elongated (wider rx) and vertically compressed (narrower ry) */}
+            {lipOpen >= cfg.mouthCavityThreshold && (
+              <ellipse
+                cx="50"
+                cy={25 + lipOpen * 4}
+                rx={7 + lipWide * 14 + (1 - lipRound) * 3}
+                ry={0.5 + lipOpen * 6 + lipRound * 3}
+                fill="url(#mouthInner)"
+                clipPath="url(#mouthClip)"
+                opacity={0.7 + lipOpen * 0.2}
+                style={{ transition: 'all 0.06s ease-out' }}
+              />
+            )}
 
             {/* Upper lip highlight for 3D effect (ENLARGED to match outer lip) */}
             <ellipse

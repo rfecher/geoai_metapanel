@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Persona } from '../data/personas';
-import AutoEyeCalibration from './AutoEyeCalibration';
+
+
 import { EyeCalibrationResult, manualCalibratePupils } from '../utils/eyeCalibration';
+
 import BrandedAvatar from './BrandedAvatar';
 
 export type FaceAnchors = {
@@ -11,6 +13,7 @@ export type FaceAnchors = {
     sizePct: number;      // Legacy: used as default for widthPct if not set
     widthPct?: number;    // 20..80 (horizontal span of mouth overlay)
     heightPct?: number;   // 10..50 (vertical span of mouth overlay)
+    rotationDeg?: number; // -45..45 (default 0) - rotation angle for asymmetric/smirk mouths
   };
   eyes?: { yPct: number; heightPct?: number };
   showTeethHint?: boolean;
@@ -26,6 +29,10 @@ export type FaceAnchors = {
   // Pupil movement constraints (percentage-based safe movement boundaries)
   maxPupilOffsetX?: number;  // 0..2.0 (max horizontal pupil movement as % of avatar width)
   maxPupilOffsetY?: number;  // 0..1.5 (max vertical pupil movement as % of avatar height)
+  // Per-persona teeth hint calibration parameters
+  teethThreshold?: number;      // 0.15..0.5 (default 0.25) - lipOpen threshold above which teeth hint appears
+  teethMaxOpacity?: number;     // 0.3..1.0 (default 0.85) - maximum opacity for teeth hint
+  teethSizeMultiplier?: number; // 0.5..1.5 (default 1.0) - scales teeth ellipse rx/ry
 };
 
 type AvatarCalibrationToolProps = {
@@ -40,7 +47,7 @@ export default function AvatarCalibrationTool({ personas, generatedAvatars = {},
   const [anchors, setAnchors] = useState<Record<string, FaceAnchors>>({});
   const [activeId, setActiveId] = useState<string>(personas[0]?.id ?? '');
   const [previewOverlay, setPreviewOverlay] = useState(true);
-  const [showAutoCalibration, setShowAutoCalibration] = useState(false);
+
   const [showManualCalibration, setShowManualCalibration] = useState(false);
 
   // Mouth size is persisted via anchors.mouth.sizePct; remove separate preview scale
@@ -49,6 +56,7 @@ export default function AvatarCalibrationTool({ personas, generatedAvatars = {},
   const [customWide, setCustomWide] = useState(0.4);
   const [customRound, setCustomRound] = useState(0.15);
   const [calibrationPath, setCalibrationPath] = useState<string | null>(null);
+
 
   // Manual calibration state
   const [manualLeftX, setManualLeftX] = useState<string>('');
@@ -62,20 +70,68 @@ export default function AvatarCalibrationTool({ personas, generatedAvatars = {},
   useEffect(() => {
     (async () => {
       try {
+        // Build default anchors from persona definitions
+        const defaultAnchors: Record<string, FaceAnchors> = {};
+        for (const p of personas) {
+          if (p.faceAnchors) {
+            defaultAnchors[p.id] = p.faceAnchors as FaceAnchors;
+          }
+        }
+
+        let savedAnchors: Record<string, FaceAnchors> | null = null;
+
         // Prefer Electron persisted file
         if (window.electron?.calibrationLoad) {
           const res = await window.electron.calibrationLoad();
           if (res.success && res.data && typeof res.data === 'object') {
-            setAnchors(res.data as Record<string, FaceAnchors>);
-            return;
+            savedAnchors = res.data as Record<string, FaceAnchors>;
           }
         }
+
         // Fallback to localStorage
-        const raw = localStorage.getItem('avatarFaceAnchors');
-        if (raw) setAnchors(JSON.parse(raw));
-      } catch {}
+        if (!savedAnchors) {
+          const raw = localStorage.getItem('avatarFaceAnchors');
+          if (raw) savedAnchors = JSON.parse(raw);
+        }
+
+        // Merge saved anchors with defaults from persona definitions
+        // This ensures new properties (like heightPct, widthPct) are added from persona definitions
+        // while preserving user calibrations
+        if (savedAnchors) {
+          const mergedAnchors: Record<string, FaceAnchors> = {};
+          for (const personaId in defaultAnchors) {
+            const defaultAnchor = defaultAnchors[personaId];
+            const savedAnchor = savedAnchors[personaId];
+
+            if (savedAnchor) {
+              // Merge: saved values take precedence, but add missing properties from defaults
+              mergedAnchors[personaId] = {
+                ...defaultAnchor,
+                ...savedAnchor,
+                mouth: {
+                  ...defaultAnchor.mouth,
+                  ...savedAnchor.mouth,
+                },
+                eyes: savedAnchor.eyes ? {
+                  ...defaultAnchor.eyes,
+                  ...savedAnchor.eyes,
+                } : defaultAnchor.eyes,
+              };
+            } else {
+              // No saved data for this persona, use default
+              mergedAnchors[personaId] = defaultAnchor;
+            }
+          }
+          setAnchors(mergedAnchors);
+        } else {
+          // No saved data at all, use defaults from persona definitions
+          setAnchors(defaultAnchors);
+        }
+      } catch (err) {
+        console.error('Error loading calibration data:', err);
+      }
     })();
-  }, []);
+  }, [personas]);
   useEffect(() => {
     (async () => {
       try {
@@ -103,28 +159,37 @@ export default function AvatarCalibrationTool({ personas, generatedAvatars = {},
   };
 
   const resetPersona = (id: string) => {
-    setAnchors(prev => {
-      const next = { ...prev };
-      delete next[id];
-      return next;
-    });
+    // Reset to persona definition defaults
+    const persona = personas.find(p => p.id === id);
+    if (persona?.faceAnchors) {
+      setAnchors(prev => ({
+        ...prev,
+        [id]: persona.faceAnchors as FaceAnchors,
+      }));
+    } else {
+      // No persona definition, just delete the saved calibration
+      setAnchors(prev => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+    }
   };
 
-  const handleAutoCalibrationApply = (results: Record<string, EyeCalibrationResult>) => {
-    setAnchors(prev => {
-      const next = { ...prev };
-      for (const [personaId, result] of Object.entries(results)) {
-        next[personaId] = {
-          ...(next[personaId] || { mouth: { xPct: 50, yPct: 72, sizePct: 36 }, eyes: { yPct: 20, heightPct: 7 } }),
-          eyeSeparationPct: result.eyeSeparationPct,
-          eyeCenterOffsetPct: result.eyeCenterOffsetPct,
-          leftPupilYPct: result.leftPupilYPct,
-          rightPupilYPct: result.rightPupilYPct,
-        };
+  const resetAllToDefaults = () => {
+    // Reset all personas to their definition defaults
+    const defaultAnchors: Record<string, FaceAnchors> = {};
+    for (const p of personas) {
+      if (p.faceAnchors) {
+        defaultAnchors[p.id] = p.faceAnchors as FaceAnchors;
       }
-      return next;
-    });
+    }
+    setAnchors(defaultAnchors);
   };
+
+
+
+
 
   const handleManualCalibrationCalculate = () => {
     try {
@@ -173,13 +238,7 @@ export default function AvatarCalibrationTool({ personas, generatedAvatars = {},
 
   return (
     <div style={containerStyle}>
-      {showAutoCalibration && (
-        <AutoEyeCalibration
-          personaIds={personas.map(p => p.id)}
-          onClose={() => setShowAutoCalibration(false)}
-          onApply={handleAutoCalibrationApply}
-        />
-      )}
+
 
       {showManualCalibration && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -305,12 +364,14 @@ export default function AvatarCalibrationTool({ personas, generatedAvatars = {},
             Saving to: {calibrationPath || 'App user data directory (avatar-face-anchors.json)'}
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button className="btn" onClick={() => setShowAutoCalibration(true)} style={{ background: '#8b5cf6' }}>
-            Auto-Calibrate Eyes
-          </button>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+
           <button className="btn" onClick={() => setShowManualCalibration(true)} style={{ background: '#3b82f6' }}>
             Manual Calibrate Eyes
+          </button>
+
+          <button className="btn" onClick={resetAllToDefaults} style={{ background: '#ef4444' }}>
+            Reset All to Defaults
           </button>
           <button className="btn" onClick={() => { save(); onClose(); }}>Save & Close</button>
           <button className="btn" onClick={onClose}>Cancel</button>
@@ -348,6 +409,9 @@ export default function AvatarCalibrationTool({ personas, generatedAvatars = {},
             customOpen={customOpen}
             customWide={customWide}
             customRound={customRound}
+            teethThreshold={anchors[activeId]?.teethThreshold ?? (personas.find(p => p.id === activeId)?.animationConfig as any)?.teethThreshold ?? 0.25}
+            teethMaxOpacity={anchors[activeId]?.teethMaxOpacity ?? (personas.find(p => p.id === activeId)?.animationConfig as any)?.teethMaxOpacity ?? 0.85}
+            teethSizeMultiplier={anchors[activeId]?.teethSizeMultiplier ?? (personas.find(p => p.id === activeId)?.animationConfig as any)?.teethSizeMultiplier ?? 1.0}
           />
           <CalibrationControls
             preview={previewOverlay}
@@ -360,6 +424,23 @@ export default function AvatarCalibrationTool({ personas, generatedAvatars = {},
                 showTeethHint: v,
               }
             }))}
+            teethThreshold={anchors[activeId]?.teethThreshold ?? (personas.find(p => p.id === activeId)?.animationConfig as any)?.teethThreshold ?? 0.25}
+            setTeethThreshold={(v) => setAnchors(prev => ({
+              ...prev,
+              [activeId]: { ...(prev[activeId] || { mouth: { xPct: 50, yPct: 72, sizePct: 36 }, eyes: { yPct: 20, heightPct: 7 } }), teethThreshold: v },
+            }))}
+            teethMaxOpacity={anchors[activeId]?.teethMaxOpacity ?? (personas.find(p => p.id === activeId)?.animationConfig as any)?.teethMaxOpacity ?? 0.85}
+            setTeethMaxOpacity={(v) => setAnchors(prev => ({
+              ...prev,
+              [activeId]: { ...(prev[activeId] || { mouth: { xPct: 50, yPct: 72, sizePct: 36 }, eyes: { yPct: 20, heightPct: 7 } }), teethMaxOpacity: v },
+            }))}
+            teethSizeMultiplier={anchors[activeId]?.teethSizeMultiplier ?? (personas.find(p => p.id === activeId)?.animationConfig as any)?.teethSizeMultiplier ?? 1.0}
+            setTeethSizeMultiplier={(v) => setAnchors(prev => ({
+              ...prev,
+              [activeId]: { ...(prev[activeId] || { mouth: { xPct: 50, yPct: 72, sizePct: 36 }, eyes: { yPct: 20, heightPct: 7 } }), teethSizeMultiplier: v },
+            }))}
+
+
             mouthXPct={anchors[activeId]?.mouth?.xPct ?? 50}
             setMouthXPct={(v) => setAnchors(prev => ({
               ...prev,
@@ -384,12 +465,20 @@ export default function AvatarCalibrationTool({ personas, generatedAvatars = {},
                 mouth: { ...(prev[activeId]?.mouth || { xPct: 50, yPct: 72, sizePct: 36 }), widthPct: v },
               }
             }))}
-            mouthHeightPct={anchors[activeId]?.mouth?.heightPct ?? 20}
+            mouthHeightPct={anchors[activeId]?.mouth?.heightPct ?? 14}
             setMouthHeightPct={(v) => setAnchors(prev => ({
               ...prev,
               [activeId]: {
                 ...(prev[activeId] || {}),
                 mouth: { ...(prev[activeId]?.mouth || { xPct: 50, yPct: 72, sizePct: 36 }), heightPct: v },
+              }
+            }))}
+            mouthRotationDeg={anchors[activeId]?.mouth?.rotationDeg ?? 0}
+            setMouthRotationDeg={(v) => setAnchors(prev => ({
+              ...prev,
+              [activeId]: {
+                ...(prev[activeId] || {}),
+                mouth: { ...(prev[activeId]?.mouth || { xPct: 50, yPct: 72, sizePct: 36 }), rotationDeg: v },
               }
             }))}
             eyeSeparationPct={anchors[activeId]?.eyeSeparationPct ?? 26}
@@ -450,7 +539,7 @@ export default function AvatarCalibrationTool({ personas, generatedAvatars = {},
     </div>
   );
 }
-function CalibrationControls({ preview, setPreview, teeth, setTeeth, mouthXPct, setMouthXPct, mouthYPct, setMouthYPct, mouthWidthPct, setMouthWidthPct, mouthHeightPct, setMouthHeightPct, eyeSeparationPct, setEyeSeparationPct, eyeHeightPct, setEyeHeightPct, eyeWidthPct, setEyeWidthPct, pupilSizeScale, setPupilSizeScale, eyeScale, setEyeScale, eyeCenterOffsetPct, setEyeCenterOffsetPct, maxPupilOffsetX, setMaxPupilOffsetX, maxPupilOffsetY, setMaxPupilOffsetY, previewViseme, setPreviewViseme, customOpen, setCustomOpen, customWide, setCustomWide, customRound, setCustomRound }: { preview: boolean; setPreview: (v: boolean) => void; teeth: boolean; setTeeth: (v: boolean) => void; mouthXPct: number; setMouthXPct: (v: number) => void; mouthYPct: number; setMouthYPct: (v: number) => void; mouthWidthPct: number; setMouthWidthPct: (v: number) => void; mouthHeightPct: number; setMouthHeightPct: (v: number) => void; eyeSeparationPct: number; setEyeSeparationPct: (v: number) => void; eyeHeightPct: number; setEyeHeightPct: (v: number) => void; eyeWidthPct: number; setEyeWidthPct: (v: number) => void; pupilSizeScale: number; setPupilSizeScale: (v: number) => void; eyeScale: number; setEyeScale: (v: number) => void; eyeCenterOffsetPct: number; setEyeCenterOffsetPct: (v: number) => void; maxPupilOffsetX: number; setMaxPupilOffsetX: (v: number) => void; maxPupilOffsetY: number; setMaxPupilOffsetY: (v: number) => void; previewViseme: 'loop'|'Rest'|'A'|'E'|'O'|'FV'|'Custom'; setPreviewViseme: (v: 'loop'|'Rest'|'A'|'E'|'O'|'FV'|'Custom') => void; customOpen: number; setCustomOpen: (v: number) => void; customWide: number; setCustomWide: (v: number) => void; customRound: number; setCustomRound: (v: number) => void; }) {
+function CalibrationControls({ preview, setPreview, teeth, setTeeth, teethThreshold, setTeethThreshold, teethMaxOpacity, setTeethMaxOpacity, teethSizeMultiplier, setTeethSizeMultiplier, mouthXPct, setMouthXPct, mouthYPct, setMouthYPct, mouthWidthPct, setMouthWidthPct, mouthHeightPct, setMouthHeightPct, mouthRotationDeg, setMouthRotationDeg, eyeSeparationPct, setEyeSeparationPct, eyeHeightPct, setEyeHeightPct, eyeWidthPct, setEyeWidthPct, pupilSizeScale, setPupilSizeScale, eyeScale, setEyeScale, eyeCenterOffsetPct, setEyeCenterOffsetPct, maxPupilOffsetX, setMaxPupilOffsetX, maxPupilOffsetY, setMaxPupilOffsetY, previewViseme, setPreviewViseme, customOpen, setCustomOpen, customWide, setCustomWide, customRound, setCustomRound }: { preview: boolean; setPreview: (v: boolean) => void; teeth: boolean; setTeeth: (v: boolean) => void; teethThreshold: number; setTeethThreshold: (v: number) => void; teethMaxOpacity: number; setTeethMaxOpacity: (v: number) => void; teethSizeMultiplier: number; setTeethSizeMultiplier: (v: number) => void; mouthXPct: number; setMouthXPct: (v: number) => void; mouthYPct: number; setMouthYPct: (v: number) => void; mouthWidthPct: number; setMouthWidthPct: (v: number) => void; mouthHeightPct: number; setMouthHeightPct: (v: number) => void; mouthRotationDeg: number; setMouthRotationDeg: (v: number) => void; eyeSeparationPct: number; setEyeSeparationPct: (v: number) => void; eyeHeightPct: number; setEyeHeightPct: (v: number) => void; eyeWidthPct: number; setEyeWidthPct: (v: number) => void; pupilSizeScale: number; setPupilSizeScale: (v: number) => void; eyeScale: number; setEyeScale: (v: number) => void; eyeCenterOffsetPct: number; setEyeCenterOffsetPct: (v: number) => void; maxPupilOffsetX: number; setMaxPupilOffsetX: (v: number) => void; maxPupilOffsetY: number; setMaxPupilOffsetY: (v: number) => void; previewViseme: 'loop'|'Rest'|'A'|'E'|'O'|'FV'|'Custom'; setPreviewViseme: (v: 'loop'|'Rest'|'A'|'E'|'O'|'FV'|'Custom') => void; customOpen: number; setCustomOpen: (v: number) => void; customWide: number; setCustomWide: (v: number) => void; customRound: number; setCustomRound: (v: number) => void; }) {
   return (
 
     <div style={{ padding: 12, borderTop: '1px solid #374151', background: '#0f172a', color: '#e5e7eb' }}>
@@ -464,6 +553,24 @@ function CalibrationControls({ preview, setPreview, teeth, setTeeth, mouthXPct, 
             <input type="checkbox" checked={teeth} onChange={e => setTeeth(e.target.checked)} />
             Show teeth hint
           </label>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            Teeth Threshold
+            <input type="range" min={0.15} max={0.5} step={0.01} value={teethThreshold} onChange={e => setTeethThreshold(parseFloat(e.target.value))} />
+            <span style={{ width: 42, textAlign: 'right' }}>{teethThreshold.toFixed(2)}</span>
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            Teeth Max Opacity
+            <input type="range" min={0.3} max={1.0} step={0.01} value={teethMaxOpacity} onChange={e => setTeethMaxOpacity(parseFloat(e.target.value))} />
+            <span style={{ width: 42, textAlign: 'right' }}>{teethMaxOpacity.toFixed(2)}</span>
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            Teeth Size
+            <input type="range" min={0.5} max={1.5} step={0.01} value={teethSizeMultiplier} onChange={e => setTeethSizeMultiplier(parseFloat(e.target.value))} />
+            <span style={{ width: 42, textAlign: 'right' }}>{teethSizeMultiplier.toFixed(2)}×</span>
+          </label>
+        </div>
+
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center' }}>
           <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -485,6 +592,11 @@ function CalibrationControls({ preview, setPreview, teeth, setTeeth, mouthXPct, 
             Mouth Height
             <input type="range" min={3} max={50} step={1} value={mouthHeightPct} onChange={e => setMouthHeightPct(parseFloat(e.target.value))} />
             <span style={{ width: 42, textAlign: 'right' }}>{Math.round(mouthHeightPct)}%</span>
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            Mouth Rotation
+            <input type="range" min={-45} max={45} step={0.5} value={mouthRotationDeg} onChange={e => setMouthRotationDeg(parseFloat(e.target.value))} />
+            <span style={{ width: 48, textAlign: 'right' }}>{mouthRotationDeg.toFixed(1)}°</span>
           </label>
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center' }}>
@@ -595,7 +707,7 @@ function CalibrationControls({ preview, setPreview, teeth, setTeeth, mouthXPct, 
 }
 
 
-function PersonaCalibrationCanvas({ persona, imageUrl, anchors, onChange, previewOverlay, previewTeeth, previewViseme, customOpen, customWide, customRound }: { persona: Persona; imageUrl?: string; anchors?: FaceAnchors; onChange: (a: FaceAnchors) => void; previewOverlay: boolean; previewTeeth: boolean; previewViseme: 'loop'|'Rest'|'A'|'E'|'O'|'FV'|'Custom'; customOpen: number; customWide: number; customRound: number; }) {
+function PersonaCalibrationCanvas({ persona, imageUrl, anchors, onChange, previewOverlay, previewTeeth, previewViseme, customOpen, customWide, customRound, teethThreshold, teethMaxOpacity, teethSizeMultiplier }: { persona: Persona; imageUrl?: string; anchors?: FaceAnchors; onChange: (a: FaceAnchors) => void; previewOverlay: boolean; previewTeeth: boolean; previewViseme: 'loop'|'Rest'|'A'|'E'|'O'|'FV'|'Custom'; customOpen: number; customWide: number; customRound: number; teethThreshold: number; teethMaxOpacity: number; teethSizeMultiplier: number; }) {
   const ref = useRef<HTMLDivElement>(null);
   const [dragging, setDragging] = useState<null | { kind: 'mouth' | 'eyes'; dx: number; dy: number }>(null);
   const a: FaceAnchors = anchors || { mouth: { xPct: 50, yPct: 72, sizePct: 36 }, eyes: { yPct: 20, heightPct: 7 } };
@@ -947,6 +1059,7 @@ function PersonaCalibrationCanvas({ persona, imageUrl, anchors, onChange, previe
             className="mouth-preview"
             style={{ position: 'absolute', top: `${a.mouth.yPct}%`, left: `${a.mouth.xPct}%`, transform: 'translate(-50%, -50%)', width: `${Math.max(16, a.mouth.sizePct * 0.70)}%`, pointerEvents: 'none', opacity: 0.9 }}
             viewBox="0 0 100 50"
+            key={`mouth-${animTick}-${teethThreshold.toFixed(2)}-${teethMaxOpacity.toFixed(2)}-${teethSizeMultiplier.toFixed(2)}`}
           >
             <defs>
               {/* Outer lip gradient - natural lip color tones */}
@@ -956,12 +1069,33 @@ function PersonaCalibrationCanvas({ persona, imageUrl, anchors, onChange, previe
                 <stop offset="100%" stopColor="rgba(100, 50, 50, 0.5)" />
               </radialGradient>
 
+              {/* Transition gradient - blends from lip color to dark cavity */}
+              <radialGradient id="mouthTransitionCal" cx="50%" cy="42%">
+                <stop offset="0%" stopColor="rgba(80, 45, 45, 0.7)" />
+                <stop offset="40%" stopColor="rgba(60, 30, 30, 0.8)" />
+                <stop offset="70%" stopColor="rgba(45, 20, 20, 0.85)" />
+                <stop offset="100%" stopColor="rgba(30, 12, 12, 0.8)" />
+              </radialGradient>
+
               {/* Inner mouth gradient - darker for depth */}
               <radialGradient id="mouthInnerCal" cx="50%" cy="45%">
                 <stop offset="0%" stopColor="rgba(40, 15, 15, 0.85)" />
                 <stop offset="50%" stopColor="rgba(20, 8, 8, 0.95)" />
                 <stop offset="100%" stopColor="rgba(10, 5, 5, 0.75)" />
               </radialGradient>
+
+              {/* Teeth fill - off-white ivory with subtle vertical shading */}
+              <linearGradient id="teethFillCal" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="rgba(255, 255, 252, 0.98)" />
+                <stop offset="60%" stopColor="rgba(250, 248, 244, 0.96)" />
+                <stop offset="100%" stopColor="rgba(240, 236, 230, 0.92)" />
+              </linearGradient>
+
+              {/* Inner rim highlight - subtle warm rim just inside the lips */}
+              <linearGradient id="innerRimCal" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="rgba(255, 200, 180, 0.18)" />
+                <stop offset="100%" stopColor="rgba(255, 200, 180, 0)" />
+              </linearGradient>
 
               {/* Lip highlight gradient for 3D effect */}
               <linearGradient id="lipHighlightCal" x1="0" y1="0" x2="0" y2="1">
@@ -1010,6 +1144,7 @@ function PersonaCalibrationCanvas({ persona, imageUrl, anchors, onChange, previe
                     opacity={0.8 + lipOpen * 0.15}
                   />
 
+
                   {/* Inner mouth opening - dark for depth (REDUCED for less dominance) */}
                   <ellipse
                     cx="50"
@@ -1021,28 +1156,47 @@ function PersonaCalibrationCanvas({ persona, imageUrl, anchors, onChange, previe
                     opacity={0.7 + lipOpen * 0.2}
                   />
 
-                  {/* Upper lip highlight for 3D effect (ENLARGED to match outer lip) */}
-                  <ellipse
-                    cx="50"
-                    cy={23 + lipOpen * 1.5}
-                    rx={14 + lipWide * 18 + (1 - lipRound) * 6}
-                    ry={3 + lipOpen * 7 + lipRound * 4}
-                    fill="url(#lipHighlightCal)"
-                    clipPath="url(#mouthClipCal)"
-                    opacity={0.45 - lipOpen * 0.15}
-                  />
 
-                  {previewTeeth && (
-                    <rect
-                      x={50 - (20 + lipWide * 10) / 2}
-                      y={22 + Math.max(0, 1 - lipOpen) * 4}
-                      width={20 + lipWide * 10}
-                      height={Math.max(0, (lipOpen - 0.25) * 10)}
-                      rx="2"
-                      ry="2"
-                      fill="rgba(255,255,255,0.7)"
-                      opacity={Math.max(0, Math.min(0.8, (lipOpen - 0.25) * 2))}
+
+                  {/* Teeth hint - subtle upper incisors (behind transition, in front of cavity) */}
+                  {previewTeeth && lipOpen > teethThreshold && (
+                    <ellipse
+                      cx="50"
+                      cy={25 + lipOpen * 1.8 - (3 + lipOpen * 12 + lipRound * 6) * 0.35 * 0.5}
+                      rx={(8 + lipWide * 10 + (1 - lipRound) * 3) * (1.0 + Math.min(1, Math.max(0, (lipOpen - teethThreshold) / 0.4)) * 0.3) * teethSizeMultiplier}
+                      ry={Math.max(0.5, (2 + lipOpen * 5 + lipRound * 2) * (0.8 + Math.min(1, Math.max(0, (lipOpen - teethThreshold) / 0.4)) * 0.25) * teethSizeMultiplier)}
+                      fill="url(#teethFillCal)"
                       clipPath="url(#mouthClipCal)"
+                      opacity={Math.min(teethMaxOpacity, 0.15 + Math.min(1, Math.max(0, (lipOpen - teethThreshold) / 0.4)) * 0.7)}
+                      stroke="rgba(255, 215, 0, 0.35)"
+                      strokeWidth="0.3"
+                      vectorEffect="non-scaling-stroke"
+                    />
+                  )}
+
+                  {/* Transition layer - smooth blend from lip color to cavity */}
+                  {lipOpen > 0.1 && (
+                    <ellipse
+                      cx="50"
+                      cy={25 + lipOpen * 3}
+                      rx={(12 + lipWide * 14 + (1 - lipRound) * 4)}
+                      ry={(3 + lipOpen * 12 + lipRound * 6)}
+                      fill="url(#mouthTransitionCal)"
+                      clipPath="url(#mouthClipCal)"
+                      opacity={Math.min(0.9, 0.65 + lipOpen * 0.15)}
+                    />
+                  )}
+
+                  {/* Inner rim highlight - warm rim just inside upper lip */}
+                  {lipOpen > 0.12 && (
+                    <ellipse
+                      cx="50"
+                      cy={23.5 + lipOpen * 1.2}
+                      rx={14 + lipWide * 18 + (1 - lipRound) * 6}
+                      ry={(3 + lipOpen * 7 + lipRound * 4) * 0.8}
+                      fill="url(#innerRimCal)"
+                      clipPath="url(#mouthClipCal)"
+                      opacity={Math.max(0, 0.22 - lipOpen * 0.12)}
                     />
                   )}
 
@@ -1059,6 +1213,17 @@ function PersonaCalibrationCanvas({ persona, imageUrl, anchors, onChange, previe
                     strokeWidth={1.4 + lipOpen * 0.5}
                     fill="none"
                   />
+
+                  {/* Upper lip highlight for 3D effect (ENLARGED to match outer lip) */}
+                  <ellipse
+                    cx="50"
+                    cy={23 + lipOpen * 1.5}
+                    rx={14 + lipWide * 18 + (1 - lipRound) * 6}
+                    ry={3 + lipOpen * 7 + lipRound * 4}
+                    fill="url(#lipHighlightCal)"
+                    clipPath="url(#mouthClipCal)"
+                    opacity={0.45 - lipOpen * 0.15}
+                  />
                 </g>
               );
             })()}
@@ -1070,9 +1235,11 @@ function PersonaCalibrationCanvas({ persona, imageUrl, anchors, onChange, previe
         </div>
         {/* End calibration canvas wrapper */}
 
-        {/* Live BrandedAvatar preview */}
+        {/* Live Avatar preview */}
         <div>
-          <div style={{ color: '#e5e7eb', fontSize: 12, marginBottom: 4, fontWeight: 600 }}>Live Preview (BrandedAvatar)</div>
+          <div style={{ color: '#e5e7eb', fontSize: 12, marginBottom: 4, fontWeight: 600 }}>
+            Live Preview (BrandedAvatar)
+          </div>
           <div style={{ background: '#1f2937', borderRadius: 12, padding: 16, display: 'flex', justifyContent: 'center' }}>
             <BrandedAvatar
               personaId={persona.id}
@@ -1082,7 +1249,13 @@ function PersonaCalibrationCanvas({ persona, imageUrl, anchors, onChange, previe
               audioAmplitude={previewViseme === 'loop' ? 0.5 : (visemePose.open * 0.8)}
               visemePose={visemePose}
               faceAnchors={a}
-              animationConfig={persona.animationConfig}
+              animationConfig={{
+                ...persona.animationConfig,
+                showTeethHint: a.showTeethHint ?? (persona.animationConfig as any)?.showTeethHint ?? true,
+                teethThreshold: a.teethThreshold ?? (persona.animationConfig as any)?.teethThreshold ?? 0.25,
+                teethMaxOpacity: a.teethMaxOpacity ?? (persona.animationConfig as any)?.teethMaxOpacity ?? 0.85,
+                teethSizeMultiplier: a.teethSizeMultiplier ?? (persona.animationConfig as any)?.teethSizeMultiplier ?? 1.0,
+              }}
             />
           </div>
           <div style={{ color: '#9ca3af', fontSize: 11, marginTop: 8, maxWidth: 320 }}>

@@ -24,6 +24,7 @@ export type BrandedAvatarProps = {
       sizePct: number;      // Legacy: used as default for widthPct if not set
       widthPct?: number;    // 20..80 (horizontal span of mouth overlay)
       heightPct?: number;   // 10..50 (vertical span of mouth overlay)
+      rotationDeg?: number; // -45..45 (default 0) - rotation angle for asymmetric/smirk mouths
     };
     eyes?: { yPct: number; heightPct?: number };
     eyeSeparationPct?: number; // 18..34 (percentage of avatar width between pupil centers)
@@ -39,6 +40,7 @@ export type BrandedAvatarProps = {
     mouthSmoothing?: number;
     minOpen?: number;
     maxOpen?: number;
+    mouthCavityThreshold?: number; // 0..0.5 (default 0.1) - lipOpen threshold below which mouth cavity is hidden
     blinkRateSec?: number;
     blinkJitterPct?: number;
     headSwayPx?: number;
@@ -56,6 +58,10 @@ export type BrandedAvatarProps = {
     dilationRangeRPx?: number;
     dilationPeriodSec?: number;
     mouthScale?: number;
+    showTeethHint?: boolean; // if false, hides subtle teeth hint layer
+    teethThreshold?: number; // 0.15..0.5 (default 0.25) - lipOpen threshold above which teeth hint appears
+    teethMaxOpacity?: number; // 0.3..1.0 (default 0.85) - maximum opacity for teeth hint
+    teethSizeMultiplier?: number; // 0.5..1.5 (default 1.0) - scales teeth ellipse rx/ry
     maxPupilOffsetX?: number;  // 0..2.0 (max horizontal pupil movement as % of avatar width)
     maxPupilOffsetY?: number;  // 0..1.5 (max vertical pupil movement as % of avatar height)
   };
@@ -107,6 +113,7 @@ export default function BrandedAvatar({
     mouthSmoothing: Math.min(Math.max(animationConfig?.mouthSmoothing ?? 0.18, 0), 0.95),
     minOpen: animationConfig?.minOpen ?? 0.05,
     maxOpen: animationConfig?.maxOpen ?? 1,
+    mouthCavityThreshold: Math.max(0, Math.min(0.5, animationConfig?.mouthCavityThreshold ?? 0.1)),
     blinkRateSec: animationConfig?.blinkRateSec ?? 4,
     blinkJitterPct: animationConfig?.blinkJitterPct ?? 0.5,
     headSwayPx: Math.max(0, Math.min(5.0, animationConfig?.headSwayPx ?? 2.5)),
@@ -125,6 +132,10 @@ export default function BrandedAvatar({
     dilationPeriodSec: Math.max(5, Math.min(20, animationConfig?.dilationPeriodSec ?? 11)),
     maxPupilOffsetX: Math.max(0, Math.min(2.0, animationConfig?.maxPupilOffsetX ?? 0.8)),
     maxPupilOffsetY: Math.max(0, Math.min(1.5, animationConfig?.maxPupilOffsetY ?? 0.5)),
+    showTeethHint: animationConfig?.showTeethHint ?? true,
+    teethThreshold: Math.max(0.15, Math.min(0.5, animationConfig?.teethThreshold ?? 0.25)),
+    teethMaxOpacity: Math.max(0.3, Math.min(1.0, animationConfig?.teethMaxOpacity ?? 0.85)),
+    teethSizeMultiplier: Math.max(0.5, Math.min(1.5, animationConfig?.teethSizeMultiplier ?? 1.0)),
   }), [animationConfig]);
 
   // Envelope smoothing for amplitude
@@ -134,6 +145,7 @@ export default function BrandedAvatar({
   const smoothedAmp = (envRef.current = nextEnv);
 
   // Derived mouth params
+
   const lipOpen = visemePose ? Math.min(cfg.maxOpen, Math.max(cfg.minOpen, visemePose.open)) : smoothedAmp;
   const lipWide = visemePose ? visemePose.wide : smoothedAmp * 0.6;
   const lipRound = visemePose ? visemePose.round : 0;
@@ -148,6 +160,15 @@ export default function BrandedAvatar({
   }, [personaId]);
 
   // Default face anchors if not provided
+  // TEMP: Debug teeth condition and lipOpen values (remove when verified)
+  useEffect(() => {
+    if (typeof window !== 'undefined' && (window as any).__AVATAR_DEBUG) {
+      const ok = cfg.showTeethHint && lipOpen > cfg.teethThreshold;
+      // eslint-disable-next-line no-console
+      console.debug('[BrandedAvatar] lipOpen:', lipOpen.toFixed(2), 'showTeethHint:', cfg.showTeethHint, 'teethCond:', ok, 'threshold:', cfg.teethThreshold.toFixed(2));
+    }
+  }, [lipOpen, cfg.showTeethHint]);
+
   const mouth = faceAnchors?.mouth ?? { xPct: 50, yPct: 55, sizePct: 40 };
   const eyes = faceAnchors?.eyes ?? { yPct: 35, heightPct: 12 };
 
@@ -167,8 +188,11 @@ export default function BrandedAvatar({
   // Mouth dimensions with separate width and height control
   // Backward compatible: if widthPct not set, fall back to sizePct * 0.30 (legacy behavior)
   const mouthWidthPct = mouth.widthPct ?? Math.max(16, mouth.sizePct * 0.30 * mouthScale);
-  // Height control: if heightPct not set, use default of 20%
-  const mouthHeightPct = mouth.heightPct ?? 20;
+  // Height control: if heightPct not set, use default of 14% (typical mouth height relative to face)
+  const mouthHeightPct = mouth.heightPct ?? 14;
+
+  // Mouth rotation for asymmetric/smirk mouths (default: 0)
+  const mouthRotationDeg = mouth.rotationDeg ?? 0;
 
   // Eyes: positioned relative to center with separation
   const eyeYPct = eyes.yPct;
@@ -403,12 +427,21 @@ export default function BrandedAvatar({
 
 
 
+  // Debug logging for mouth rotation
+  useEffect(() => {
+    console.log('[BrandedAvatar] Mouth rotation updated:', {
+      personaId,
+      rotationDeg: mouthRotationDeg,
+      faceAnchors: faceAnchors?.mouth
+    });
+  }, [mouthRotationDeg, personaId, faceAnchors]);
+
   // Mouth animation parameters (matching AnimatedAvatar approach)
   // The mouth is rendered as an SVG viewBox, so we work in normalized coordinates
   // Base ellipse dimensions in viewBox units (100x50 viewBox)
   const mouthBaseRx = 40; // Base horizontal radius in viewBox units
-  // Scale base vertical radius by mouthHeightPct (default 20% → 15 units, range 10-50% → 7.5-37.5 units)
-  const mouthBaseRy = (mouthHeightPct / 20) * 15; // Scale from default 15 units based on heightPct
+  // Scale base vertical radius by mouthHeightPct (default 14% → 10.5 units, range 3-50% → 2.25-37.5 units)
+  const mouthBaseRy = (mouthHeightPct / 14) * 10.5; // Scale from default 10.5 units based on heightPct
 
   // Animate based on lip parameters
   const mouthRx = mouthBaseRx + lipWide * (mouthBaseRx * 0.3) + (1 - lipRound) * 5;
@@ -512,7 +545,8 @@ export default function BrandedAvatar({
             position: 'absolute',
             top: `${mouthYPct}%`,
             left: `${mouthXPct}%`,
-            transform: 'translate(-50%, -50%)',
+            transform: `translate(-50%, -50%) rotate(${mouthRotationDeg}deg)`,
+            transformOrigin: 'center center',
             width: `${mouthWidthPct}%`,
             pointerEvents: 'none',
             opacity: 0.9,
@@ -527,12 +561,33 @@ export default function BrandedAvatar({
               <stop offset="100%" stopColor="rgba(100, 50, 50, 0.5)" />
             </radialGradient>
 
+            {/* Transition gradient - blends from lip color to dark cavity */}
+            <radialGradient id={`mouthTransition-${personaId}`} cx="50%" cy="42%">
+              <stop offset="0%" stopColor="rgba(80, 45, 45, 0.7)" />
+              <stop offset="40%" stopColor="rgba(60, 30, 30, 0.8)" />
+              <stop offset="70%" stopColor="rgba(45, 20, 20, 0.85)" />
+              <stop offset="100%" stopColor="rgba(30, 12, 12, 0.8)" />
+            </radialGradient>
+
             {/* Inner mouth gradient - darker for depth */}
             <radialGradient id={`mouthInner-${personaId}`} cx="50%" cy="45%">
               <stop offset="0%" stopColor="rgba(40, 15, 15, 0.85)" />
               <stop offset="50%" stopColor="rgba(20, 8, 8, 0.95)" />
               <stop offset="100%" stopColor="rgba(10, 5, 5, 0.75)" />
             </radialGradient>
+
+            {/* Teeth fill - off-white ivory with subtle vertical shading */}
+            <linearGradient id={`teethFill-${personaId}`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="rgba(255, 255, 252, 0.98)" />
+              <stop offset="60%" stopColor="rgba(250, 248, 244, 0.96)" />
+              <stop offset="100%" stopColor="rgba(240, 236, 230, 0.92)" />
+            </linearGradient>
+
+            {/* Inner rim highlight - subtle warm rim just inside the lips */}
+            <linearGradient id={`innerRim-${personaId}`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="rgba(255, 200, 180, 0.18)" />
+              <stop offset="100%" stopColor="rgba(255, 200, 180, 0)" />
+            </linearGradient>
 
             {/* Lip highlight gradient for 3D effect */}
             <linearGradient id={`lipHighlight-${personaId}`} x1="0" y1="0" x2="0" y2="1">
@@ -541,10 +596,34 @@ export default function BrandedAvatar({
               <stop offset="100%" stopColor="rgba(120, 60, 60, 0.05)" />
             </linearGradient>
 
+            {/* Lip line gradient: subtle shadow for closed mouth appearance */}
+            <linearGradient id={`lipLine-${personaId}`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="rgba(58, 36, 32, 0)" />
+              <stop offset="35%" stopColor="rgba(45, 27, 24, 0.45)" />
+              <stop offset="50%" stopColor="rgba(31, 18, 16, 0.65)" />
+              <stop offset="65%" stopColor="rgba(45, 27, 24, 0.45)" />
+              <stop offset="100%" stopColor="rgba(58, 36, 32, 0)" />
+            </linearGradient>
+
             <clipPath id={`mouthClip-${personaId}`}>
               <ellipse cx="50" cy="25" rx="40" ry="15" />
             </clipPath>
           </defs>
+
+          {/* Subtle lip line: visible when mouth is closed to suggest lip seam */}
+          <ellipse
+            cx="50"
+            cy={25}
+            rx={mouthBaseRx * 0.45}
+            ry={0.6}
+            fill={`url(#lipLine-${personaId})`}
+            opacity={
+              lipOpen < cfg.mouthCavityThreshold
+                ? Math.max(0.5, 0.75 - (lipOpen / cfg.mouthCavityThreshold) * 0.25)
+                : Math.max(0, 0.5 - ((lipOpen - cfg.mouthCavityThreshold) / (1 - cfg.mouthCavityThreshold)) * 0.5)
+            }
+            style={{ transition: 'opacity 120ms ease-out' }}
+          />
 
           {/* Outer lip area - natural lip color (ENLARGED for more prominence) */}
           <ellipse
@@ -557,16 +636,59 @@ export default function BrandedAvatar({
             opacity={Math.min(0.95, 0.8 + lipOpen * 0.15)}
           />
 
-          {/* Inner mouth opening - dark for depth (REDUCED for less dominance) */}
-          <ellipse
-            cx="50"
-            cy={mouthCy + lipOpen * 2}
-            rx={mouthRx * 0.4}
-            ry={mouthRy * 0.5}
-            fill={`url(#mouthInner-${personaId})`}
-            clipPath={`url(#mouthClip-${personaId})`}
-            opacity={Math.min(0.95, 0.7 + lipOpen * 0.2)}
-          />
+
+          {/* Inner mouth opening - dark for depth (only visible when lipOpen exceeds threshold) */}
+          {/* Reshaped to be more horizontally elongated (wider rx) and vertically compressed (narrower ry) */}
+          {lipOpen >= cfg.mouthCavityThreshold && (
+            <ellipse
+              cx="50"
+              cy={mouthCy + lipOpen * 2}
+              rx={mouthRx * 0.55}
+              ry={mouthRy * 0.35}
+              fill={`url(#mouthInner-${personaId})`}
+              clipPath={`url(#mouthClip-${personaId})`}
+              opacity={Math.min(0.95, 0.7 + lipOpen * 0.2)}
+            />
+          )}
+
+          {/* Teeth hint - subtle upper incisors (rendered above dark cavity, below transition) */}
+          {cfg.showTeethHint && lipOpen > cfg.teethThreshold && (
+            <ellipse
+              cx="50"
+              cy={mouthCy + lipOpen * 1.2 - mouthRy * 0.35}
+              rx={mouthRx * (0.6 + lipWide * 0.12) * (0.9 + Math.min(1, Math.max(0, (lipOpen - cfg.teethThreshold) / 0.4)) * 0.3) * cfg.teethSizeMultiplier}
+              ry={Math.max(0.3, mouthRy * (0.16 + Math.min(1, Math.max(0, (lipOpen - cfg.teethThreshold) / 0.4)) * 0.16) * cfg.teethSizeMultiplier)}
+              fill={`url(#teethFill-${personaId})`}
+              clipPath={`url(#mouthClip-${personaId})`}
+              opacity={Math.min(cfg.teethMaxOpacity, 0.15 + Math.min(1, Math.max(0, (lipOpen - cfg.teethThreshold) / 0.4)) * 0.7)}
+            />
+          )}
+
+          {/* Transition layer - smooth blend from lip color to cavity (only visible when lipOpen exceeds threshold) */}
+          {lipOpen >= cfg.mouthCavityThreshold && (
+            <ellipse
+              cx="50"
+              cy={mouthCy + lipOpen * 1.2}
+              rx={mouthRx * 0.85}
+              ry={mouthRy * 0.65}
+              fill={`url(#mouthTransition-${personaId})`}
+              clipPath={`url(#mouthClip-${personaId})`}
+              opacity={Math.min(0.9, 0.65 + lipOpen * 0.15)}
+            />
+          )}
+
+          {/* Inner rim highlight - subtle warm rim just inside upper lip */}
+          {lipOpen > 0.12 && (
+            <ellipse
+              cx="50"
+              cy={mouthCy - lipOpen * 0.2}
+              rx={mouthRx * 1.1}
+              ry={mouthRy * 0.6}
+              fill={`url(#innerRim-${personaId})`}
+              clipPath={`url(#mouthClip-${personaId})`}
+              opacity={Math.max(0, 0.22 - lipOpen * 0.12)}
+            />
+          )}
 
           {/* Upper lip highlight for 3D effect (ENLARGED to match outer lip) */}
           <ellipse
@@ -579,6 +701,8 @@ export default function BrandedAvatar({
             opacity={0.45 - lipOpen * 0.15}
           />
         </svg>
+
+
 
         {/* Eyes - Left pupil with iris (percentage-based positioning with independent Y) */}
         {cfg.gazeEnabled && (

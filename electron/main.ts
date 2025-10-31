@@ -659,31 +659,6 @@ ipcMain.handle('calibration-path', async () => {
 });
 
 /**
- * Save calibrated SVG file for a specific persona
- */
-ipcMain.handle('calibration-save-svg', async (_event, personaId: string, svgContent: string) => {
-  try {
-    // Validate persona ID
-    const validPersonas = ['maya', 'otto', 'sarah', 'marcus', 'jessica'];
-    if (!validPersonas.includes(personaId)) {
-      throw new Error(`Invalid persona ID: ${personaId}`);
-    }
-
-    // Construct file path relative to project root
-    const filePath = join(ROOT_DIR, '..', 'public', 'avatars', `${personaId}_hybrid.svg`);
-
-    // Write SVG content
-    await writeFile(filePath, svgContent, 'utf-8');
-    console.log(`✅ Saved ${personaId} hybrid SVG to`, filePath);
-
-    return { success: true };
-  } catch (error) {
-    console.error('❌ Failed to save SVG:', error);
-    return { success: false, error: error instanceof Error ? error.message : String(error) };
-  }
-});
-
-/**
  * Update a persona's animationConfig in personas.ts
  */
 ipcMain.handle('calibration-save-persona-config', async (_event, personaId: string, animationConfig: Record<string, any>) => {

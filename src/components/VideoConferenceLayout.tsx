@@ -20,6 +20,30 @@ type VideoConferenceLayoutProps = {
   meetingMode?: boolean;
 };
 
+// Helper function to render the BrandedAvatar component
+function renderAvatar(
+  persona: Persona,
+  size: 'small' | 'medium' | 'large' | 'xlarge',
+  isSpeaking: boolean,
+  isListening: boolean,
+  audioAmplitude: number,
+  visemePose: { viseme: string; open: number; wide: number; round: number } | undefined
+) {
+  return (
+    <BrandedAvatar
+      personaId={persona.id}
+      name={persona.name}
+      size={size}
+      isSpeaking={isSpeaking}
+      isListening={isListening}
+      audioAmplitude={audioAmplitude}
+      visemePose={visemePose}
+      faceAnchors={persona.faceAnchors}
+      animationConfig={persona.animationConfig}
+    />
+  );
+}
+
 export default function VideoConferenceLayout({
   personas,
   speakingPersonaId,
@@ -64,16 +88,14 @@ export default function VideoConferenceLayout({
         {/* Main speaker view */}
         <div className="speaker-main">
           <div className="speaker-content">
-              <BrandedAvatar
-                personaId={speakingPersona.id}
-                name={speakingPersona.name}
-                size={speakerSize}
-                isSpeaking={true}
-                audioAmplitude={audioAmplitudes[speakingPersona.id] || 0}
-                visemePose={visemesByPersona[speakingPersona.id]}
-                faceAnchors={speakingPersona.faceAnchors}
-                animationConfig={speakingPersona.animationConfig}
-              />
+              {renderAvatar(
+                speakingPersona,
+                speakerSize,
+                true,
+                false,
+                audioAmplitudes[speakingPersona.id] || 0,
+                visemesByPersona[speakingPersona.id]
+              )}
             <div className="speaker-info">
               <div className="speaker-name" style={{ color: speakingPersona.color }}>
                 {speakingPersona.name}
@@ -99,17 +121,14 @@ export default function VideoConferenceLayout({
             const thinking = inFlight.has(p.id);
             return (
               <div key={p.id} className="thumbnail-item">
-                <BrandedAvatar
-                  personaId={p.id}
-                  name={p.name}
-                  size="small"
-                  isSpeaking={false}
-                  isListening={enableListeningAnimations && !!speakingPersonaId}
-                  audioAmplitude={0}
-                  visemePose={visemesByPersona[p.id]}
-                  faceAnchors={p.faceAnchors}
-                  animationConfig={p.animationConfig}
-                />
+                {renderAvatar(
+                  p,
+                  "small",
+                  false,
+                  enableListeningAnimations && !!speakingPersonaId,
+                  0,
+                  visemesByPersona[p.id]
+                )}
                 <div className="thumbnail-info">
                   <div className="thumbnail-name">{p.name}</div>
                   {thinking && <span className="badge thinking mini">thinking</span>}
@@ -136,17 +155,14 @@ export default function VideoConferenceLayout({
 
           return (
             <div key={p.id} className={`grid-item ${speaking ? 'speaking' : ''}`}>
-                <BrandedAvatar
-                  personaId={p.id}
-                  name={p.name}
-                  size={gridSize}
-                  isSpeaking={speaking}
-                  isListening={enableListeningAnimations && !speaking && !!speakingPersonaId}
-                  audioAmplitude={audioAmplitudes[p.id] || 0}
-                  visemePose={visemesByPersona[p.id]}
-                  faceAnchors={p.faceAnchors}
-                  animationConfig={p.animationConfig}
-                />
+                {renderAvatar(
+                  p,
+                  gridSize,
+                  speaking,
+                  enableListeningAnimations && !speaking && !!speakingPersonaId,
+                  audioAmplitudes[p.id] || 0,
+                  visemesByPersona[p.id]
+                )}
               <div className="grid-info">
                 <div className="grid-name" style={{ color: speaking ? p.color : '#111827' }}>
                   {p.name}
