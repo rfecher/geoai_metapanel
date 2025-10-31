@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Mouth Calibration Test</title>
+  <style>
+    body {
+      font-family: monospace;
+      padding: 20px;
+      background: #1a1a1a;
+      color: #e0e0e0;
+    }
+    .result {
+      background: #2a2a2a;
+      padding: 15px;
+      margin: 10px 0;
+      border-radius: 5px;
+      border-left: 4px solid #10b981;
+    }
+    .error {
+      border-left-color: #ef4444;
+    }
+    button {
+      background: #10b981;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 14px;
+      margin: 10px 5px;
+    }
+    button:hover {
+      background: #059669;
+    }
+    pre {
+      background: #0a0a0a;
+      padding: 10px;
+      border-radius: 3px;
+      overflow-x: auto;
+    }
+  </style>
+</head>
+<body>
+  <h1>Avatar Mouth Calibration</h1>
+  <p>This script analyzes avatar images to detect mouth dimensions.</p>
+  
+  <div>
+    <button onclick="calibrateAll()">Calibrate All Avatars</button>
+    <button onclick="calibrateSingle('maya')">Calibrate Maya</button>
+    <button onclick="calibrateSingle('sarah')">Calibrate Sarah</button>
+    <button onclick="calibrateSingle('marcus')">Calibrate Marcus</button>
+    <button onclick="calibrateSingle('otto')">Calibrate Otto</button>
+    <button onclick="calibrateSingle('vantor')">Calibrate Vantor</button>
+  </div>
+  
+  <div id="results"></div>
+
+  <script type="module">
+    // Import the mouth calibration utility
+    import { autoCalibrateMouth, autoCalibrateMouthBatch } from '../src/utils/mouthCalibration.ts';
+
+    const resultsDiv = document.getElementById('results');
+
+    window.calibrateSingle = async function(personaId) {
+      resultsDiv.innerHTML += `<div class="result">Calibrating ${personaId}...</div>`;
+      
+      try {
+        const result = await autoCalibrateMouth(personaId);
+        
+        if (result) {
+          const html = `
+            <div class="result">
+              <h3>${personaId}</h3>
+              <pre>faceAnchors: {
+  mouth: {
+    xPct: ${result.mouthCenterXPct.toFixed(2)},
+    yPct: ${result.mouthCenterYPct.toFixed(2)},
+    sizePct: 40,  // Keep existing
+    widthPct: ${result.mouthWidthPct.toFixed(2)},
+    heightPct: ${result.mouthHeightPct.toFixed(2)},
+  },
+  // ... other properties
+}</pre>
+              <p>Confidence: ${(result.confidence * 100).toFixed(1)}%</p>
+            </div>
+          `;
+          resultsDiv.innerHTML += html;
+        } else {
+          resultsDiv.innerHTML += `<div class="result error">Failed to calibrate ${personaId}</div>`;
+        }
+      } catch (error) {
+        resultsDiv.innerHTML += `<div class="result error">Error calibrating ${personaId}: ${error.message}</div>`;
+      }
+    };
+
+    window.calibrateAll = async function() {
+      resultsDiv.innerHTML = '<div class="result">Starting batch calibration...</div>';
+      
+      const personaIds = ['maya', 'sarah', 'marcus', 'otto', 'vantor'];
+      
+      try {
+        const results = await autoCalibrateMouthBatch(personaIds);
+        
+        let html = '<div class="result"><h2>Batch Calibration Results</h2>';
+        
+        for (const [personaId, result] of Object.entries(results)) {
+          html += `
+            <h3>${personaId}</h3>
+            <pre>faceAnchors: {
+  mouth: {
+    xPct: ${result.mouthCenterXPct.toFixed(2)},
+    yPct: ${result.mouthCenterYPct.toFixed(2)},
+    sizePct: 40,  // Keep existing
+    widthPct: ${result.mouthWidthPct.toFixed(2)},
+    heightPct: ${result.mouthHeightPct.toFixed(2)},
+  },
+  // ... other properties
+}</pre>
+            <p>Confidence: ${(result.confidence * 100).toFixed(1)}%</p>
+            <hr>
+          `;
+        }
+        
+        html += '</div>';
+        resultsDiv.innerHTML += html;
+        
+        // Also output as JSON for easy copy-paste
+        const jsonOutput = {};
+        for (const [personaId, result] of Object.entries(results)) {
+          jsonOutput[personaId] = {
+            widthPct: parseFloat(result.mouthWidthPct.toFixed(2)),
+            heightPct: parseFloat(result.mouthHeightPct.toFixed(2)),
+            centerXPct: parseFloat(result.mouthCenterXPct.toFixed(2)),
+            centerYPct: parseFloat(result.mouthCenterYPct.toFixed(2)),
+            confidence: parseFloat((result.confidence * 100).toFixed(1))
+          };
+        }
+        
+        resultsDiv.innerHTML += `
+          <div class="result">
+            <h3>JSON Output (for reference)</h3>
+            <pre>${JSON.stringify(jsonOutput, null, 2)}</pre>
+          </div>
+        `;
+        
+      } catch (error) {
+        resultsDiv.innerHTML += `<div class="result error">Batch calibration error: ${error.message}</div>`;
+      }
+    };
+  </script>
+</body>
+</html>
+
