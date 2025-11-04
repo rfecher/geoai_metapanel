@@ -1,0 +1,32 @@
+%% GeoAI Metapanel — Data Flow (Voice → LLM → TTS → Avatar)
+sequenceDiagram
+  autonumber
+  participant U as User
+  participant UI as UI (Electron/React)
+  participant OWW as OpenWakeWord (Python, open-source)
+  participant WH as Whisper.cpp (open-source STT)
+  participant CE as Conversation Context Engine
+  participant OR as Persona Orchestrator
+  participant L1 as LLM (First panelist via Ollama/LM Studio/MLX)
+  participant Lx as LLMs (Other panelists in parallel)
+  participant PIP as Piper TTS (open-source)
+  participant AV as BrandedAvatar + Captions
+
+  U->>OWW: "Okay Panel..." (speech)
+  OWW-->>UI: Wake word detected
+  UI->>UI: Start VAD recording
+  UI->>WH: WAV audio (16kHz mono)
+  WH-->>UI: Transcript text
+  UI->>CE: Provide transcript
+  CE->>OR: Start round, pick first speaker
+  OR->>L1: Prompt + system + context
+  par Other panelists (parallel)
+    OR->>Lx: Prompts
+    Lx-->>CE: Responses (stream)
+  end
+  L1-->>CE: Response (stream)
+  CE-->>PIP: Text for first panelist
+  PIP-->>AV: Audio + visemes
+  AV-->>U: Spoken response + animated avatar
+  WH-->>AV: Live captions overlay
+

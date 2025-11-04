@@ -222,8 +222,10 @@ ipcMain.handle('piper-speak', async (_event, text: string, voice: string) => {
       }
 
       if (!modelPath.endsWith('.onnx')) {
-        // Try to find the model in common locations
+        // Try to find the model in common locations and in the project root
+        const projectRoot = join(ROOT_DIR, '..');
         const possiblePaths = [
+          join(projectRoot, `${modelPath}.onnx`),
           `${process.env.HOME}/.local/share/piper-tts/${modelPath}.onnx`,
           `${process.env.HOME}/Library/Python/3.9/share/piper-tts/${modelPath}.onnx`,
           `/usr/local/share/piper-tts/${modelPath}.onnx`,
@@ -244,14 +246,14 @@ ipcMain.handle('piper-speak', async (_event, text: string, voice: string) => {
         }
 
         if (!found) {
-          throw new Error(`Piper voice model not found: ${voice}\n\nPlease download models from: https://github.com/rhasspy/piper/releases\nExtract to: ~/.local/share/piper-tts/\n\nOr use Web Speech API instead.`);
+          throw new Error(`Piper voice model not found: ${voice}\n\nPlease download models from: https://github.com/rhasspy/piper/releases\nExtract to: ~/.local/share/piper-tts/ or place <model>.onnx at the project root.\n\nOr use Web Speech API instead.`);
         }
       }
 
       // Call Piper using stdin redirection from file (more reliable than echo for long text)
       // Add --speaker parameter if speaker ID is specified
       const speakerParam = speakerId !== null ? ` --speaker ${speakerId}` : '';
-      const command = `cat "${textFile}" | "${piperPath}" --model "${modelPath}"${speakerParam} --output-file "${audioFile}"`;
+      const command = `cat "${textFile}" | "${piperPath}" --model "${modelPath}"${speakerParam} --length_scale 0.86 --output-file "${audioFile}"`;
 
       console.log('🔵 Executing Piper with text file input');
       console.log('🔵 Command:', command);

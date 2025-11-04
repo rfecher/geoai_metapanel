@@ -1,0 +1,60 @@
+%% GeoAI Metapanel — Technology Stack (Open-Source/Open-Weight Highlighted)
+flowchart TB
+  %% Styles
+  classDef open fill:#e8f5e9,stroke:#1b5e20,stroke-width:1px,color:#0b3d0b;
+
+
+  classDef ui fill:#eef2ff,stroke:#3730a3,stroke-width:1px,color:#111827;
+  classDef service fill:#fff7ed,stroke:#c2410c,stroke-width:1px,color:#111827;
+
+  subgraph Audio_Input[Audio Input]
+    OWW[OpenWakeWord]:::open
+    WH[whisper.cpp]:::open
+  end
+
+  subgraph Language_Models[Language Models]
+    MiniMax[MiniMax-M2 4-bit]:::open
+  end
+
+  subgraph Speech_Synthesis[Speech Synthesis]
+    Piper[Piper TTS\nlocal neural voices]:::open
+  end
+
+  subgraph Image_Generation[Image Generation]
+
+    Flux[Flux via ComfyUI\nopen-weight]:::open
+  end
+
+  subgraph Frontend_UI[Frontend/UI]
+    ReactTS[React + TypeScript]:::ui
+    Vite[Vite]:::ui
+    VC[VideoConferenceLayout]:::ui
+    BA[BrandedAvatar + AvatarCalibrationTool]:::ui
+  end
+
+  subgraph Desktop_Shell[Desktop App Shell]
+    Electron[Electron\npreload + IPC]:::service
+    Node[Node.js main process]:::service
+    Python[Python helper scripts\nOpenWakeWord]:::service
+  end
+
+  subgraph Tooling_Dev[Tooling/Dev]
+    VPE[vite-plugin-electron]:::service
+    WaitOn[wait-on, concurrently]:::service
+    Tests[Context Engine Test Harness CLI]:::service
+  end
+
+  %% Relationships
+  ReactTS --> Electron
+  Electron --> Node
+  Node --> Piper & WH
+  Node --> Python
+  ReactTS --> Vite
+  VC --> BA
+  BA --> Assets[(public/avatars)]:::open
+  Node --> MiniMax
+
+  Flux --> Assets
+
+  %% Open-source/open-weight elements are green
+

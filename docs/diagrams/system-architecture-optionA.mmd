@@ -1,0 +1,56 @@
+%% GeoAI Metapanel — System Architecture (Option A: Local SD / Automatic1111)
+flowchart LR
+  %% Visual styles
+  classDef open fill:#e8f5e9,stroke:#1b5e20,stroke-width:1px,color:#0b3d0b;
+  classDef optional fill:#f3f4f6,stroke:#6b7280,stroke-width:1px,color:#111827,stroke-dasharray:6 3;
+  classDef ui fill:#eef2ff,stroke:#3730a3,stroke-width:1px,color:#111827;
+  classDef service fill:#fff7ed,stroke:#c2410c,stroke-width:1px,color:#111827;
+
+  subgraph UI["Desktop UI (React + Vite + Electron)"]
+    VC["VideoConferenceLayout + BrandedAvatar\n(presents personas; animates visemes)"]:::ui
+    Captions["Captions/Transcript Overlay"]:::ui
+  end
+
+  subgraph Audio["Audio Input (Open Source)"]
+    Mic([Microphone])
+    OWW["OpenWakeWord\nwake word detection (Python)"]:::open
+    Whisper["whisper.cpp\nSpeech‑to‑Text (local)"]:::open
+  end
+
+  subgraph Orchestration["Conversation + Persona Orchestration"]
+    Ctx["Conversation Context Engine\n(history, topics, tension, skip)"]:::service
+    Pers["Persona Orchestrator\n(model routing, latency pipeline)"]:::service
+  end
+
+  subgraph LLMs["LLM Inference (Open‑weight preferred)"]
+    subgraph Local["Local engines (Open‑weight)"]
+      Ollama["Ollama\nLlama 3.1, Mistral, Qwen, Phi…"]:::open
+      LMStudio["LM Studio\nOpenAI‑compatible local"]:::open
+      MLX["MLX‑LM (Apple Silicon)\nLlama 3.2 3B 4‑bit"]:::open
+    end
+    OpenAI["OpenAI API\n(proprietary fallback)"]:::optional
+  end
+
+  subgraph TTS["Speech Synthesis (Open Source)"]
+    Piper["Piper TTS\nlocal neural voices"]:::open
+  end
+
+  subgraph Avatars["Avatar Generation (Open Source)"]
+    SD["Stable Diffusion (Automatic1111)\nlocal API :7860"]:::open
+    Assets[(public/avatars/*.png)]:::open
+  end
+
+  Mic --> OWW -->|wake word| Whisper -->|transcript| Ctx --> Pers
+  Pers -->|prompt| Ollama
+  Pers -->|prompt| LMStudio
+  Pers -->|prompt| MLX
+  Ollama -->|response| Ctx
+  LMStudio -->|response| Ctx
+  MLX -->|response| Ctx
+  Ctx -->|text| Piper -->|audio + visemes| VC
+  SD -->|PNG headshots| Assets -->|selected per persona| VC
+  Whisper -->|live captions| Captions
+  Pers -. optional fallback .-> OpenAI
+
+  %% Note: Green nodes are open‑source/open‑weight components
+

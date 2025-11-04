@@ -390,7 +390,7 @@ CRITICAL OUTPUT FORMAT REQUIREMENTS:
         }
     },
     imagePrompt: 'Professional headshot of Dr. Marcus Webb, American man in his mid to late 40s; medium tan skin; close-cropped dark hair; clean-shaven; brown eyes; confident but approachable expression. Neutral charcoal studio background, crisp key light with soft rim, 85mm portrait lens, shallow depth of field. Dark tailored suit, white shirt, subtle pocket square. Photorealistic, sharp detail, natural skin texture.',
-    ttsVoiceId: 'en_US-norman-medium', // Piper: confident American male
+    ttsVoiceId: 'en_US-kusal-medium', // Piper: Kusal – clear American English male
     animationConfig: {
       mouthScale: 1,
       showTeethHint: true,
@@ -474,7 +474,7 @@ CRITICAL OUTPUT FORMAT REQUIREMENTS:
     color: '#8B5CF6',
     avatarInitials: 'JH',
     imageUrl: undefined,  // Using BrandedAvatar with conference backdrop and logo
-    eyeColor: '#7a807e', // Blue-hazel eyes
+    eyeColor: '#494d4b', // Blue-hazel eyes
     faceAnchors: {
         "mouth": {
             "xPct": 48.73291015625,

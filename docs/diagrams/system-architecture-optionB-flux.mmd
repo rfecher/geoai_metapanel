@@ -1,0 +1,59 @@
+%% GeoAI Metapanel — System Architecture (Option B: Flux for Avatar Generation)
+flowchart LR
+%% Visual styles
+    classDef open fill:#e8f5e9,stroke:#1b5e20,stroke-width:1px,color:#0b3d0b;
+
+
+    classDef ui fill:#eef2ff,stroke:#3730a3,stroke-width:1px,color:#111827;
+    classDef service fill:#fff7ed,stroke:#c2410c,stroke-width:1px,color:#111827;
+
+subgraph UI["Desktop UI
+  (React + Vite + Electron)"]
+VC["Video Conference Layout
+presents personas"]:::ui
+Captions["Captions/Transcript Overlay"]:::ui
+end
+
+subgraph Audio["Audio Input"]
+Mic([Microphone])
+OWW["OpenWakeWord
+wake word detection "]:::open
+Whisper["whisper.cpp
+speech-to-text"]:::open
+end
+
+subgraph Orchestration["Conversation + Persona Orchestration"]
+Ctx["ConversationContextEngine
+history, topics, tension"]:::service
+Pers["Persona Orchestrator
+routing, latency pipeline"]:::service
+end
+
+subgraph LLMs["LLM Inference"]
+MiniMax["MiniMax-M2 4-bit
+open-weight"]:::open
+end
+
+subgraph TTS["Speech Synthesis"]
+Piper["Piper TTS
+local neural voices"]:::open
+end
+
+subgraph Avatars["Avatar Generation"]
+Flux["Flux Stable Diffusion
+text-to-image"]:::open
+Assets[(avatar images)]:::open
+
+end
+
+Mic --> OWW -->|wake word| Whisper -->|transcript| Ctx --> Pers
+Pers -->|prompt| MiniMax
+MiniMax -->|response| Ctx
+Ctx -->|text| Piper -->|audio + visemes| VC
+Flux -->|PNG headshots| Assets -->|selected per persona| VC
+
+Whisper -->|live captions| Captions
+
+
+%% Green nodes are open-source/open-weight
+

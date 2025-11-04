@@ -75,14 +75,15 @@ export default function LLMProviderSelector({ config, onConfigChange, onModelsRe
     <div className="llm-provider-selector">
       <div className="label">LLM Provider</div>
       <div className="provider-presets">
-        <select 
-          value={currentPreset} 
+        <select
+          value={currentPreset}
           onChange={(e) => handlePresetChange(e.target.value)}
           className="text-input"
         >
           <option value="ollama">Ollama (localhost:11434)</option>
           <option value="lmstudio">LM Studio (localhost:1234)</option>
           <option value="openai">OpenAI API</option>
+          <option value="mlx">MLX-LM (127.0.0.1:8080)</option>
           <option value="custom">Custom Configuration</option>
         </select>
       </div>
@@ -178,6 +179,7 @@ export default function LLMProviderSelector({ config, onConfigChange, onModelsRe
           <li><strong>Ollama:</strong> Run <code>ollama serve</code> in terminal</li>
           <li><strong>LM Studio:</strong> Start local server in LM Studio app (→ tab)</li>
           <li><strong>OpenAI:</strong> Add your API key above</li>
+          <li><strong>MLX-LM:</strong> Start with <code>python3 -m mlx_lm.server --model mlx-community/Llama-3.2-3B-Instruct-4bit --host 127.0.0.1 --port 8080 --use-default-chat-template</code></li>
         </ul>
       </div>
     </div>

@@ -20,7 +20,7 @@ declare -a VOICES=(
     "en_GB-alba-medium|en/en_GB/alba/medium"           # Maya Ríos
     "en_US-lessac-medium|en/en_US/lessac/medium"       # Prof. Otto
     "en_US-amy-medium|en/en_US/amy/medium"             # Dr. Sarah Hayes
-    "en_US-norman-medium|en/en_US/norman/medium"           # Dr. Marcus Webb
+    "en_US-kusal-medium|en/en_US/kusal/medium"             # Dr. Marcus Webb
     "en_US-libritts_r-medium|en/en_US/libritts_r/medium"  # Lt. Col. Jessica Hayes
 )
 

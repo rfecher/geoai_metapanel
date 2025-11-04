@@ -6,6 +6,7 @@ export type TTSAmplitudeInfo = { personaId?: string; amp: number };
 let amplitudeListener: ((info: TTSAmplitudeInfo) => void) | null = null;
 export function setTtsAmplitudeListener(fn: ((info: TTSAmplitudeInfo) => void) | null) {
   amplitudeListener = fn;
+  try { (window as any).ttsAmplitudeListener = fn as any; } catch {}
 }
 
 
@@ -48,6 +49,36 @@ export function cancelCurrentSpeech() {
     amplitudeListener({ amp: 0 });
   }
 }
+
+// ----------------------------------------------------------------------------
+// Global exclusive playback queue to prevent overlapping voices across providers
+// ----------------------------------------------------------------------------
+function getPlaybackChain(): Promise<void> {
+  const w = window as any;
+  if (!w.__ttsPlaybackChain) {
+    w.__ttsPlaybackChain = Promise.resolve();
+  }
+  return w.__ttsPlaybackChain as Promise<void>;
+}
+function setPlaybackChain(p: Promise<void>) {
+  (window as any).__ttsPlaybackChain = p;
+}
+
+function withExclusivePlayback<T>(fn: () => Promise<T>): Promise<T> {
+  const runner = async () => {
+    // Stop any ongoing Web Speech utterances and pause any current HTML audio
+    try { (window as any).speechSynthesis?.cancel(); } catch {}
+    try { if ((window as any).currentTTSAudio) (window as any).currentTTSAudio.pause(); } catch {}
+    // Give the audio graph a brief moment to settle
+    await new Promise(res => setTimeout(res, 20));
+    return fn();
+  };
+  const prev = getPlaybackChain();
+  const p = prev.then(runner, runner);
+  setPlaybackChain(p.then(() => {}, () => {}));
+  return p;
+}
+
 
 // Declare global window property
 declare global {
@@ -265,8 +296,13 @@ export async function ttsSpeak(text: string, settings: TTSSettings, personaId?: 
 }
 
 async function speakWebSpeech(text: string, voiceName?: string, personaId?: string): Promise<void> {
-  return new Promise<void>((resolve) => {
+  return withExclusivePlayback(() => new Promise<void>((resolve) => {
     try {
+      // Safety: pause any HTML audio that might still be playing
+      if (window.currentTTSAudio) {
+        try { window.currentTTSAudio.pause(); } catch {}
+      }
+
       const u = new SpeechSynthesisUtterance(text);
 
       if (voiceName) {
@@ -292,7 +328,7 @@ async function speakWebSpeech(text: string, voiceName?: string, personaId?: stri
     } catch {
       resolve();
     }
-  });
+  }));
 }
 
 async function speakAzure(text: string, voiceName: string, region: string, key: string, personaId?: string): Promise<void> {
@@ -341,7 +377,7 @@ async function speakElevenLabs(text: string, voiceId: string, apiKey: string, pe
 }
 
 function playAudioBuffer(buf: ArrayBuffer, mime: string, personaId?: string): Promise<void> {
-  return new Promise<void>((resolve) => {
+  return withExclusivePlayback(() => new Promise<void>((resolve) => {
     try {
       const blob = new Blob([buf], { type: mime });
       const url = URL.createObjectURL(blob);
@@ -432,7 +468,7 @@ function playAudioBuffer(buf: ArrayBuffer, mime: string, personaId?: string): Pr
       if (amplitudeListener) amplitudeListener({ personaId, amp: 0 });
       resolve();
     }
-  });
+  }));
 }
 
 function escapeXml(s: string): string {
@@ -455,7 +491,7 @@ async function generatePiperAudio(text: string, voice: string): Promise<ArrayBuf
     const response = await fetch('http://localhost:5050/api/tts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, voice }),
+      body: JSON.stringify({ text, voice, length_scale: 0.86 }),
     });
     if (!response.ok) {
       throw new Error(`Piper HTTP ${response.status}`);
@@ -516,7 +552,7 @@ async function generateElevenLabsAudio(text: string, voiceId: string, apiKey: st
  * Play pre-generated audio element
  */
 function playPreGeneratedAudio(audio: HTMLAudioElement, personaId?: string): Promise<void> {
-  return new Promise<void>((resolve) => {
+  return withExclusivePlayback(() => new Promise<void>((resolve) => {
     try {
       // Register globally for cancellation
       if (window.currentTTSAudio) {
@@ -600,6 +636,6 @@ function playPreGeneratedAudio(audio: HTMLAudioElement, personaId?: string): Pro
       if (amplitudeListener) amplitudeListener({ personaId, amp: 0 });
       resolve();
     }
-  });
+  }));
 }
 

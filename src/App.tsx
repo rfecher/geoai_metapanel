@@ -16,6 +16,8 @@ import AcknowledgmentBubble, { getAcknowledgment } from './components/Acknowledg
 
 import { startLocalWakeWord, testLocalWakeWord, isLocalWakeWordSupported } from './services/localwakeword';
 import { setBackupConfig, getBackupStatus, addBackupStateListener, removeBackupStateListener, getBackupMatchConfidence, type BackupMode } from './services/backup';
+import { createContextEngine } from './services/contextEngine';
+
 type Msg = {
   id: string;
   role: 'user' | 'assistant';
@@ -35,8 +37,11 @@ function buildHistoryChat(messagesState: Msg[], maxItems = 20, currentQuestionOn
   let tail: Msg[];
 
   if (currentQuestionOnly) {
-    // Find the last user message and include only messages after it
-    const lastUserIndex = messagesState.findLastIndex(m => m.role === 'user');
+    // Find the last user message and include only messages after it (avoid findLastIndex for ES2020 target)
+    let lastUserIndex = -1;
+    for (let i = messagesState.length - 1; i >= 0; i--) {
+      if (messagesState[i].role === 'user') { lastUserIndex = i; break; }
+    }
     if (lastUserIndex === -1) {
       tail = [];
     } else {
@@ -49,6 +54,9 @@ function buildHistoryChat(messagesState: Msg[], maxItems = 20, currentQuestionOn
 
   const out: ChatMessage[] = [];
   for (const m of tail) {
+    // Exclude acknowledgments and control placeholders from LLM history
+    if ((m as any).isAcknowledgment) continue;
+
     if (m.role === 'user') {
       out.push({ role: 'user', content: m.text });
     } else {
@@ -66,7 +74,7 @@ export default function App() {
   const [personaModels, setPersonaModels] = useState<Record<string, string>>({});
   const [availableModels, setAvailableModels] = useState<string[]>([]);
   const [contextSize, setContextSize] = useState<number>(20);
-  const [mode, setMode] = useState<'persona' | 'fastest'>('persona');
+  const [mode, setMode] = useState<'persona'>('persona');
   const [ttsProvider, setTtsProvider] = useState<'webspeech' | 'azure' | 'elevenlabs' | 'piper'>('webspeech');
   const [defaultVoice, setDefaultVoice] = useState('');
   const [personaVoices, setPersonaVoices] = useState<Record<string, string>>({});
@@ -79,7 +87,7 @@ export default function App() {
   // Whisper STT state
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
-  const [whisperModel, setWhisperModel] = useState<WhisperModel>('base.en');
+  const [whisperModel, setWhisperModel] = useState<WhisperModel>('medium.en');
   const [whisperAvailable, setWhisperAvailable] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false); // VAD: user is currently speaking
   const recordingControllerRef = useRef<{ stop: () => Promise<ArrayBuffer>; cancel: () => void } | null>(null);
@@ -94,6 +102,13 @@ export default function App() {
   // Refs to hold callback functions to avoid circular dependencies
   const onSendRef = useRef<((questionOverride?: string) => Promise<void>) | null>(null);
   const onMicrophoneClickRef = useRef<(() => Promise<void>) | null>(null);
+
+  // Conversation Context Engine
+  const contextEngineRef = useRef(createContextEngine({
+    maxHistoryMessages: 30,
+    timeWindowMs: 10 * 60 * 1000, // 10 minutes
+    timeBudgetMsPerQuestion: 3 * 60 * 1000, // ~3 minutes per question
+  }));
 
   const [ampByPersona, setAmpByPersona] = useState<Record<string, number>>({});
 
@@ -133,7 +148,6 @@ export default function App() {
   const [enableListeningAnimations, setEnableListeningAnimations] = useState(true);
 
   // Streaming settings (Phase 2: Streaming Responses)
-  const [enableStreaming, setEnableStreaming] = useState(true);
 
   // Backup/fallback system state
   const [backupMode, setBackupMode] = useState<BackupMode>('auto');
@@ -310,7 +324,7 @@ export default function App() {
 
       if (s && typeof s.personaModels === 'object') setPersonaModels(s.personaModels);
       if (typeof s.contextSize === 'number') setContextSize(s.contextSize);
-      if (s.mode === 'persona' || s.mode === 'fastest') setMode(s.mode);
+      if (s.mode === 'persona') setMode('persona');
       if (s.ttsProvider === 'webspeech' || s.ttsProvider === 'azure' || s.ttsProvider === 'elevenlabs' || s.ttsProvider === 'piper') setTtsProvider(s.ttsProvider);
       if (typeof s.defaultVoice === 'string') setDefaultVoice(s.defaultVoice);
       // For Piper, don't load personaVoices from storage - always use persona definitions
@@ -331,8 +345,6 @@ export default function App() {
       if (typeof s.showAcknowledgments === 'boolean') setShowAcknowledgments(s.showAcknowledgments);
       if (typeof s.showTypingIndicators === 'boolean') setShowTypingIndicators(s.showTypingIndicators);
       if (typeof s.enableListeningAnimations === 'boolean') setEnableListeningAnimations(s.enableListeningAnimations);
-      // Load streaming settings
-      if (typeof s.enableStreaming === 'boolean') setEnableStreaming(s.enableStreaming);
       // Load backup mode settings
       if (s.backupMode === 'disabled' || s.backupMode === 'auto' || s.backupMode === 'always' || s.backupMode === 'hybrid') setBackupMode(s.backupMode);
     } catch {}
@@ -507,11 +519,10 @@ export default function App() {
       showAcknowledgments,
       showTypingIndicators,
       enableListeningAnimations,
-      enableStreaming,
       backupMode,
     };
     try { localStorage.setItem('settings', JSON.stringify(s)); } catch {}
-  }, [llmConfig, personaModels, contextSize, mode, ttsProvider, defaultVoice, personaVoices, azureRegion, azureKey, elevenKey, whisperModel, showAcknowledgments, showTypingIndicators, enableListeningAnimations, enableStreaming, backupMode]);
+  }, [llmConfig, personaModels, contextSize, mode, ttsProvider, defaultVoice, personaVoices, azureRegion, azureKey, elevenKey, whisperModel, showAcknowledgments, showTypingIndicators, enableListeningAnimations, backupMode]);
 
 
   const scrollToEnd = useCallback(() => {
@@ -660,435 +671,143 @@ export default function App() {
     };
   }, []);
 
-  /**
-   * Helper class to handle sentence-based TTS for streaming responses
-   * Accumulates text and triggers TTS when complete sentences are detected
-   */
-  class StreamingTTSHandler {
-    private buffer = '';
-    private sentenceQueue: string[] = [];
-    private isProcessing = false;
-    private personaId: string;
-    private ttsSettings: TTSSettings;
-
-    constructor(personaId: string, ttsSettings: TTSSettings) {
-      this.personaId = personaId;
-      this.ttsSettings = ttsSettings;
-    }
-
-    /**
-     * Add a chunk of text and process any complete sentences
-     */
-    addChunk(chunk: string) {
-      this.buffer += chunk;
-      this.extractSentences();
-      this.processSentences();
-    }
-
-    /**
-     * Finalize - process any remaining text
-     */
-    finalize() {
-      if (this.buffer.trim()) {
-        this.sentenceQueue.push(this.buffer.trim());
-        this.buffer = '';
-      }
-      this.processSentences();
-    }
-
-    /**
-     * Extract complete sentences from buffer
-     */
-    private extractSentences() {
-      // Match sentences ending with . ! ? followed by space or end of string
-      const sentenceRegex = /[^.!?]+[.!?]+(?:\s|$)/g;
-      const matches = this.buffer.match(sentenceRegex);
-
-      if (matches) {
-        this.sentenceQueue.push(...matches.map(s => s.trim()));
-        // Remove extracted sentences from buffer
-        const lastMatch = matches[matches.length - 1];
-        const lastIndex = this.buffer.lastIndexOf(lastMatch) + lastMatch.length;
-        this.buffer = this.buffer.substring(lastIndex);
-      }
-    }
-
-    /**
-     * Process queued sentences for TTS
-     */
-    private async processSentences() {
-      if (this.isProcessing || this.sentenceQueue.length === 0) return;
-
-      this.isProcessing = true;
-      while (this.sentenceQueue.length > 0) {
-        const sentence = this.sentenceQueue.shift()!;
-        if (sentence.trim()) {
-          // Pre-generate and queue TTS for this sentence
-          const ttsPromise = ttsPreGenerate(sentence, this.ttsSettings, this.personaId);
-          speakQueued(sentence, this.personaId, ttsPromise);
-        }
-      }
-      this.isProcessing = false;
-    }
-  }
 
   // Robust check for "SKIP" control token that sometimes arrives with labels/quotes
-  function isSkipAddendum(raw: string, personaName: string): boolean {
-    if (!raw) return true;
-    let s = String(raw).trim();
-    // Strip leading persona label like "Dr. Sarah Chen:" if present
-    const lower = s.toLowerCase();
-    const label = `${personaName.toLowerCase()}:`;
-    if (lower.startsWith(label)) {
-      s = s.slice(label.length).trim();
-    }
-    // Remove matching surrounding quotes
-    if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith('\'') && s.endsWith('\''))) {
-      s = s.slice(1, -1).trim();
-    }
-    // Normalize: uppercase and strip trailing punctuation
-    const normalized = s.toUpperCase().replace(/[\s\.!?]+$/g, '');
-    return normalized === 'SKIP';
+
+  // Orchestrated persona-first pipeline round powered by Context Engine
+  async function handlePersonaRound(question: string, baseHistory: ChatMessage[]): Promise<void> {
+    const engine = contextEngineRef.current;
+
+    // Start round and choose first speaker
+    const participants = selectedPersonas.map(p => p.id);
+    engine.startRound(question, participants);
+    const firstId = engine.selectFirstPanelist(participants);
+    const first = selectedPersonas.find(p => p.id === firstId) || selectedPersonas[0];
+    const others = selectedPersonas.filter(p => p.id !== first.id);
+    // Log round models per persona
+    try {
+      console.log('🟡 [CE] Round start', {
+        question: question.slice(0, 180),
+        participants: selectedPersonas.map(p => ({ id: p.id, name: p.name, model: personaModels[p.id] || llmConfig.defaultModel }))
+      });
+    } catch {}
+
+
+    // TTS settings
+    const ttsSettings: TTSSettings = {
+      provider: ttsProvider,
+      defaultVoice,
+      personaVoices,
+      azureRegion,
+      azureKey,
+      elevenApiKey: elevenKey,
+    };
+
+    // 1) Show generic placeholder for first panelist immediately
+    const ackText = getAcknowledgment(first.id);
+    const ackMsgId = `m-${Date.now()}-${first.id}-ack`;
+    const ackMsg: Msg = {
+      id: ackMsgId,
+      role: 'assistant',
+      personaId: first.id,
+      author: first.name,
+      text: ackText,
+      color: first.color,
+      isAcknowledgment: true,
+    };
+    setMessages(prev => [...prev, ackMsg]);
+    // Ingest acknowledgment into Context Engine but exclude from history
+    contextEngineRef.current.ingestMessage({ id: ackMsgId, role: 'assistant', personaId: first.id, author: first.name, text: ackText, timestamp: Date.now(), excludeFromHistory: true });
+
+    scrollToEnd();
+
+    // Speak placeholder immediately
+    speakQueued(ackText, first.id);
+
+    // 2) Build enhanced system prompt and fetch first response (non-streaming)
+    const sysFirst: ChatMessage = {
+      role: 'system',
+      content: engine.buildPersonaSystemPrompt(first.systemPrompt, first.id, first.name),
+    };
+    const usedModelFirst = personaModels[first.id] || llmConfig.defaultModel;
+    const reqFirst: ChatMessage[] = [sysFirst, ...baseHistory, { role: 'user', content: question }];
+    console.log('📝 [CE] System prompt → first speaker', { personaId: first.id, personaName: first.name, model: usedModelFirst, prompt: sysFirst.content });
+    let firstAnswer = await chatWithLLM(llmConfig, { model: usedModelFirst, messages: reqFirst, personaId: first.id });
+    // Log repetition check for first speaker (diagnostic only)
+    try {
+      const rep = engine.responseIsRepetitive(firstAnswer, first.id);
+      console.log('🔁 [CE] First speaker repetition check', { personaId: first.id, personaName: first.name, repetitive: rep });
+    } catch (e) { /* noop */ }
+
+    // Record into context engine, then replace placeholder with real response and start TTS
+    engine.ingestMessage({ id: `e-${Date.now()}-${first.id}`, role: 'assistant', personaId: first.id, author: first.name, text: firstAnswer, timestamp: Date.now() });
+
+    const firstMsg: Msg = { id: `m-${Date.now()}-${first.id}`, role: 'assistant', personaId: first.id, author: first.name, text: firstAnswer, color: first.color };
+    setMessages(prev => prev.map(m => m.id === ackMsgId ? firstMsg : m));
+    scrollToEnd();
+
+    // Pre-generate and speak while we prepare others in parallel
+    const ttsPromiseFirst = ttsPreGenerate(firstAnswer, ttsSettings, first.id);
+    speakQueued(firstAnswer, first.id, ttsPromiseFirst);
+
+    // 3) While first is speaking, trigger others in parallel
+    setInFlight(new Set(others.map(p => p.id)));
+
+    const historyAfterFirst: ChatMessage[] = [
+      ...baseHistory,
+      { role: 'assistant', content: `${first.name}: ${firstAnswer}` }
+    ];
+
+    await Promise.all(others.map(async (p) => {
+      const sys: ChatMessage = { role: 'system', content: engine.buildPersonaSystemPrompt(p.systemPrompt, p.id, p.name) };
+      const usedModel = personaModels[p.id] || llmConfig.defaultModel;
+      const reqMsgs: ChatMessage[] = [sys, ...historyAfterFirst, { role: 'user', content: question }];
+      console.log('\ud83d\udcdd [CE] System prompt \u2192', { personaId: p.id, personaName: p.name, model: usedModel, prompt: sys.content });
+      let answer = await chatWithLLM(llmConfig, { model: usedModel, messages: reqMsgs, personaId: p.id });
+
+      // Defensive: avoid repetitive responses
+      const isRep = engine.responseIsRepetitive(answer, p.id);
+      console.log('\ud83d\udd01 [CE] Repetition decision', { personaId: p.id, personaName: p.name, repetitive: isRep, sample: (answer || '').slice(0, 140) });
+      if (isRep) {
+        answer = 'SKIP';
+      }
+
+      if (answer && answer.trim().toUpperCase() !== 'SKIP') {
+        engine.ingestMessage({ id: `e-${Date.now()}-${p.id}`, role: 'assistant', personaId: p.id, author: p.name, text: answer, timestamp: Date.now() });
+        const msg: Msg = { id: `m-${Date.now()}-${p.id}`, role: 'assistant', personaId: p.id, author: p.name, text: answer, color: p.color };
+        setMessages(prev => [...prev, msg]);
+        scrollToEnd();
+        const ttsPromise = ttsPreGenerate(answer, ttsSettings, p.id);
+        speakQueued(answer, p.id, ttsPromise);
+      }
+
+      setInFlight(prev => { const n = new Set(prev); n.delete(p.id); return n; });
+    }));
   }
 
 
   const onSend = useCallback(async (questionOverride?: string) => {
     const question = (questionOverride || input).trim();
-
-	// Detect if this is the canned introduction question to avoid addendums and cross-talk
-	const introMatch = getBackupMatchConfidence(question);
-	const isIntroduction = introMatch?.matchType === 'introduction' && introMatch.confidence >= 0.75;
-
     if (!question || busy) return;
 
     const userMsg: Msg = { id: `m-${Date.now()}-u`, role: 'user', author: 'You', text: question, color: '#3B82F6' };
     setMessages(prev => [...prev, userMsg]);
+    // Ingest user message into context engine
+    contextEngineRef.current.ingestMessage({ id: userMsg.id, role: 'user', text: question, timestamp: Date.now() });
+
     setInput('');
     scrollToEnd();
 
     setBusy(true);
+    if (selectedPersonas.length === 0) { setBusy(false); return; }
 
-      if (selectedPersonas.length === 0) return;
+    // Build context from current question only to reduce repetition and keep focus
+    const baseHistory = buildHistoryChat(messages, contextSize, true);
 
-      // Build context from current question only to reduce repetition and keep focus
-      const baseHistory = buildHistoryChat(messages, contextSize, true);
-
-      // Randomize persona order for variety in who responds first
-      const shuffleArray = <T,>(array: T[]): T[] => {
-        const shuffled = [...array];
-        for (let i = shuffled.length - 1; i > 0; i--) {
-          const j = Math.floor(Math.random() * (i + 1));
-          [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-        }
-        return shuffled;
-      };
-
-      const randomizedPersonas = shuffleArray(selectedPersonas);
-
-      if (mode === 'persona') {
-        let history = baseHistory;
-        const ttsSettings: TTSSettings = {
-          provider: ttsProvider,
-          defaultVoice,
-          personaVoices,
-          azureRegion,
-          azureKey,
-          elevenApiKey: elevenKey,
-        };
-
-        for (let i = 0; i < randomizedPersonas.length; i++) {
-          const p = randomizedPersonas[i];
-          const isFirstPersona = i === 0;
-
-          // Show acknowledgment message immediately if enabled (only for first persona)
-          let ackMsgId: string | undefined;
-          let acknowledgmentText: string | undefined;
-          if (showAcknowledgments && isFirstPersona) {
-            acknowledgmentText = getAcknowledgment(p.id);
-            ackMsgId = `m-${Date.now()}-${p.id}-ack`;
-            const ackMsg: Msg = {
-              id: ackMsgId,
-              role: 'assistant',
-              personaId: p.id,
-              author: p.name,
-              text: acknowledgmentText, // Store the text for consistency
-              color: p.color,
-              isAcknowledgment: true,
-            };
-            setMessages(prev => [...prev, ackMsg]);
-            scrollToEnd();
-
-            // Speak the acknowledgment immediately
-            speakQueued(acknowledgmentText, p.id);
-          }
-
-          const sys: ChatMessage = { role: 'system', content: `${p.systemPrompt}\n\nYou are one panelist among several. Focus primarily on answering the user's question directly with your unique perspective. Only reference another panelist's point if you have a strong agreement or disagreement with something specific they said. Use your background as inspiration for creative, varied perspectives - don't repeatedly mention the same credentials or experiences. Keep your response concise and focused on the current question.` };
-          const usedModel = personaModels[p.id] || llmConfig.defaultModel;
-          const reqMsgs: ChatMessage[] = [sys, ...history, { role: 'user', content: question }];
-
-          console.log(`🤖 Requesting LLM response for ${p.name}...`);
-
-          let answer = '';
-
-          if (enableStreaming) {
-            // Streaming mode: display partial responses as they arrive
-            const msgId = `m-${Date.now()}-${p.id}`;
-            const streamingMsg: Msg = {
-              id: msgId,
-              role: 'assistant',
-              personaId: p.id,
-              author: p.name,
-              text: '',
-              color: p.color,
-              isStreaming: true,
-            };
-
-            // Replace acknowledgment with empty streaming message, or add new message
-            if (ackMsgId) {
-              setMessages(prev => prev.map(m => m.id === ackMsgId ? streamingMsg : m));
-            } else {
-              setMessages(prev => [...prev, streamingMsg]);
-            }
-            scrollToEnd();
-
-            // Create TTS handler for sentence-based streaming
-            const ttsHandler = new StreamingTTSHandler(p.id, ttsSettings);
-
-            // Stream the response
-            answer = await chatWithLLMStreaming(llmConfig, { model: usedModel, messages: reqMsgs, personaId: p.id }, (chunk) => {
-              answer += chunk;
-              // Update the message with accumulated text
-              setMessages(prev => prev.map(m =>
-                m.id === msgId ? { ...m, text: answer } : m
-              ));
-              scrollToEnd();
-
-              // Process chunk for TTS
-              ttsHandler.addChunk(chunk);
-            });
-
-            // Finalize TTS
-            ttsHandler.finalize();
-
-            // Mark streaming as complete
-            setMessages(prev => prev.map(m =>
-              m.id === msgId ? { ...m, isStreaming: false } : m
-            ));
-
-            console.log(`✅ Got streaming LLM response for ${p.name}`);
-          } else {
-            // Non-streaming mode: wait for complete response
-            answer = await chatWithLLM(llmConfig, { model: usedModel, messages: reqMsgs, personaId: p.id });
-            console.log(`✅ Got LLM response for ${p.name}`);
-
-            const aMsg: Msg = { id: `m-${Date.now()}-${p.id}`, role: 'assistant', personaId: p.id, author: p.name, text: answer, color: p.color };
-
-            // Replace acknowledgment with actual response, or just add if no acknowledgment
-            if (ackMsgId) {
-              setMessages(prev => prev.map(m => m.id === ackMsgId ? aMsg : m));
-            } else {
-              setMessages(prev => [...prev, aMsg]);
-            }
-
-            scrollToEnd();
-
-            // Start pre-generating TTS immediately in the background
-            console.log(`🎬 Starting TTS pre-generation for ${p.name} RIGHT NOW (will run in background)`);
-            const ttsPromise = ttsPreGenerate(answer, ttsSettings, p.id);
-            console.log(`✨ TTS promise created for ${p.name}, generation has started`);
-
-            // Queue the speech with the promise
-            speakQueued(answer, p.id, ttsPromise);
-            console.log(`📝 Queued speech for ${p.name}, continuing to next speaker...`);
-          }
-
-          history = [...history, { role: 'assistant', content: `${p.name}: ${answer}` }];
-        }
-      } else {
-        // Fastest-first + addendums - fully non-blocking
-        setInFlight(new Set(selectedPersonas.map(p => p.id)));
-
-        const ttsSettings: TTSSettings = {
-          provider: ttsProvider,
-          defaultVoice,
-          personaVoices,
-          azureRegion,
-          azureKey,
-          elevenApiKey: elevenKey,
-        };
-
-        // Show acknowledgment message immediately for a random persona if enabled
-        const ackMsgIds: Record<string, string> = {};
-        let acknowledgmentText: string | undefined;
-        if (showAcknowledgments && randomizedPersonas.length > 0) {
-          const randomPersona = randomizedPersonas[0]; // Use first from randomized list
-          acknowledgmentText = getAcknowledgment(randomPersona.id);
-          const ackMsgId = `m-${Date.now()}-${randomPersona.id}-ack`;
-          ackMsgIds[randomPersona.id] = ackMsgId;
-
-          const ackMsg: Msg = {
-            id: ackMsgId,
-            role: 'assistant' as const,
-            personaId: randomPersona.id,
-            author: randomPersona.name,
-            text: acknowledgmentText,
-            color: randomPersona.color,
-            isAcknowledgment: true,
-          };
-          setMessages(prev => [...prev, ackMsg]);
-          scrollToEnd();
-
-          // Speak the acknowledgment immediately
-          speakQueued(acknowledgmentText, randomPersona.id);
-        }
-
-        const initialAnswers: Record<string, string> = {};
-        const completionOrder: string[] = [];
-
-        if (enableStreaming) {
-          // Streaming mode: stream responses as they arrive
-          let firstResponseStarted = false;
-
-          const responsePromises = selectedPersonas.map(async (p) => {
-            const sys: ChatMessage = { role: 'system', content: `${p.systemPrompt}\n\nYou are one panelist among several. Focus on answering the user's question directly with your unique perspective. Use your background as inspiration for creative, varied insights - don't repeatedly mention the same credentials. Keep your response concise and focused.` };
-            const usedModel = personaModels[p.id] || llmConfig.defaultModel;
-            const reqMsgs: ChatMessage[] = [sys, ...baseHistory, { role: 'user', content: question }];
-
-            const msgId = `m-${Date.now()}-${p.id}`;
-            let answer = '';
-            let messageCreated = false;
-
-            // Stream the response (UI updates only); defer TTS until the full response is ready
-            answer = await chatWithLLMStreaming(llmConfig, { model: usedModel, messages: reqMsgs, personaId: p.id }, (chunk) => {
-              answer += chunk;
-
-              if (!messageCreated) {
-                // First chunk - create the streaming message
-                const streamingMsg: Msg = {
-                  id: msgId,
-                  role: 'assistant',
-                  personaId: p.id,
-                  author: p.name,
-                  text: answer,
-                  color: p.color,
-                  isStreaming: true,
-                };
-
-                // Replace acknowledgment if this is the first persona, otherwise add new message
-                const ackMsgId = ackMsgIds[p.id];
-                if (ackMsgId) {
-                  setMessages(prev => prev.map(m => m.id === ackMsgId ? streamingMsg : m));
-                } else {
-                  setMessages(prev => [...prev, streamingMsg]);
-                }
-                messageCreated = true;
-                firstResponseStarted = true;
-              } else {
-                // Update existing message with accumulated text
-                setMessages(prev => prev.map(m =>
-                  m.id === msgId ? { ...m, text: answer } : m
-                ));
-              }
-              scrollToEnd();
-            });
-
-            // Pre-generate full TTS and queue playback after the complete response is ready
-            const ttsPromise = ttsPreGenerate(answer, ttsSettings, p.id);
-            speakQueued(answer, p.id, ttsPromise);
-
-            // Mark streaming as complete
-            setMessages(prev => prev.map(m =>
-              m.id === msgId ? { ...m, isStreaming: false } : m
-            ));
-
-            initialAnswers[p.id] = answer;
-            completionOrder.push(p.id);
-            setInFlight(prev => { const n = new Set(prev); n.delete(p.id); return n; });
-            scrollToEnd();
-
-            return { personaId: p.id, answer };
-          });
-
-          // Wait for all initial responses before doing addendums
-          await Promise.all(responsePromises);
-        } else {
-          // Non-streaming mode: original fastest-first behavior
-          const requests = selectedPersonas.map(p => {
-            const sys: ChatMessage = { role: 'system', content: `${p.systemPrompt}\n\nYou are one panelist among several. Focus on answering the user's question directly with your unique perspective. Use your background as inspiration for creative, varied insights - don't repeatedly mention the same credentials. Keep your response concise and focused.` };
-            const usedModel = personaModels[p.id] || llmConfig.defaultModel;
-            const reqMsgs: ChatMessage[] = [sys, ...baseHistory, { role: 'user', content: question }];
-            return { p, usedModel, promise: chatWithLLM(llmConfig, { model: usedModel, messages: reqMsgs, personaId: p.id }) };
-          });
-
-          // Process each response as it completes - fully non-blocking
-          const responsePromises = requests.map(({ p, promise }) =>
-            promise.then(answer => {
-              initialAnswers[p.id] = answer;
-              completionOrder.push(p.id);
-
-              // Update UI immediately when this response completes
-              const aMsg: Msg = { id: `m-${Date.now()}-${p.id}`, role: 'assistant', personaId: p.id, author: p.name, text: answer, color: p.color };
-
-              // Replace acknowledgment with actual response, or just add if no acknowledgment
-              const ackMsgId = ackMsgIds[p.id];
-              if (ackMsgId) {
-                setMessages(prev => prev.map(m => m.id === ackMsgId ? aMsg : m));
-              } else {
-                setMessages(prev => [...prev, aMsg]);
-              }
-
-              setInFlight(prev => { const n = new Set(prev); n.delete(p.id); return n; });
-              scrollToEnd();
-
-              // Start pre-generating TTS in background and queue it immediately
-              const ttsPromise = ttsPreGenerate(answer, ttsSettings, p.id);
-              speakQueued(answer, p.id, ttsPromise);
-
-              return { personaId: p.id, answer };
-            })
-          );
-
-          // Wait for all initial responses before doing addendums
-          await Promise.all(responsePromises);
-        }
-
-        // Addendums in persona order, each referencing others' points
-        // Skip addendums entirely for the introduction round to avoid cross-talk and SKIP noise
-        if (!isIntroduction) {
-
-        for (const p of selectedPersonas) {
-          const others = selectedPersonas
-            .filter(o => o.id !== p.id)
-            .map(o => (initialAnswers[o.id] ? `${o.name}: ${initialAnswers[o.id]}` : ''))
-            .filter(Boolean);
-          if (others.length === 0) continue;
-
-          const sys: ChatMessage = { role: 'system', content: `${p.systemPrompt}\n\nOnly provide a brief addendum (1-2 sentences) if you have a strong agreement or disagreement with a specific point made by another panelist. Otherwise, respond with "SKIP" to indicate you have nothing to add.` };
-          const usedModel = personaModels[p.id] || llmConfig.defaultModel;
-          const addReq: ChatMessage[] = [
-
-            sys,
-            ...baseHistory,
-            { role: 'assistant', content: `Panel so far:\n${others.join('\n')}` },
-            { role: 'user', content: 'If you have a strong reaction to a specific point made by another panelist, give a concise addendum (1-2 sentences). Otherwise, respond with exactly "SKIP".' }
-          ];
-          const addendum = await chatWithLLM(llmConfig, { model: usedModel, messages: addReq, personaId: p.id });
-
-          // Only add the addendum if it's not "SKIP"
-          if (!isSkipAddendum(addendum, p.name)) {
-            const addMsg: Msg = { id: `m-${Date.now()}-${p.id}-add`, role: 'assistant', personaId: p.id, author: p.name, text: addendum, color: p.color };
-            setMessages(prev => [...prev, addMsg]);
-            scrollToEnd();
-
-            // Start pre-generating TTS for addendum in background
-            const ttsPromise = ttsPreGenerate(addendum, ttsSettings, p.id);
-            speakQueued(addendum, p.id, ttsPromise);
-          }
-        }
-      }
+    // Unified orchestration path for persona-based conversations
+    await handlePersonaRound(question, baseHistory);
     setBusy(false);
-  }
-  }, [input, busy, selectedPersonas, llmConfig, personaModels, scrollToEnd, showAcknowledgments, ttsProvider, defaultVoice, personaVoices, azureRegion, azureKey, elevenKey, mode, messages, contextSize, enableStreaming]);
+  }, [input, busy, selectedPersonas, llmConfig, personaModels, scrollToEnd, showAcknowledgments, ttsProvider, defaultVoice, personaVoices, azureRegion, azureKey, elevenKey, mode, messages, contextSize]);
 
   // Store onSend in ref for use in callbacks
   useEffect(() => {
@@ -1392,15 +1111,6 @@ export default function App() {
           />
           <div className="tip">0 = no prior context; larger values include more history</div>
 
-          <div className="label" style={{ marginTop: 12 }}>Response order</div>
-          <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <input type="radio" checked={mode === 'persona'} onChange={() => setMode('persona')} /> Persona order
-            </label>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <input type="radio" checked={mode === 'fastest'} onChange={() => setMode('fastest')} /> Fastest-first + addendums
-            </label>
-          </div>
 
           {/* Conversation Dynamics Settings */}
           <div className="label" style={{ marginTop: 16, fontWeight: 700 }}>💬 Conversation Dynamics</div>
@@ -1442,17 +1152,6 @@ export default function App() {
             Non-speaking avatars show subtle engagement animations (nods, blinks)
           </div>
 
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, cursor: 'pointer' }}>
-            <input
-              type="checkbox"
-              checked={enableStreaming}
-              onChange={e => setEnableStreaming(e.target.checked)}
-            />
-            <span>Enable streaming responses</span>
-          </label>
-          <div className="tip" style={{ marginLeft: 24 }}>
-            Display LLM responses incrementally as they arrive (reduces perceived latency)
-          </div>
 
           {/* Backup/Fallback System Settings */}
           <div className="label" style={{ marginTop: 16, fontWeight: 700 }}>📦 Backup/Fallback System</div>
@@ -1687,7 +1386,11 @@ export default function App() {
 
           // Render acknowledgment bubble for acknowledgment messages
           if (m.isAcknowledgment && p) {
-            return <AcknowledgmentBubble key={m.id} persona={p} isUser={false} showTypingIndicator={showTypingIndicators} acknowledgmentText={m.text} />;
+            return (
+              <div key={m.id}>
+                <AcknowledgmentBubble persona={p} isUser={false} showTypingIndicator={showTypingIndicators} acknowledgmentText={m.text} />
+              </div>
+            );
           }
 
           // Render normal message bubble

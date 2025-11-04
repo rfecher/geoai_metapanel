@@ -12,6 +12,33 @@
 
 import { personas } from '../data/personas';
 
+
+// ----------------------------------------------------------------------------
+// Share the same global exclusive playback queue (via window) used by TTS service
+// ----------------------------------------------------------------------------
+function getPlaybackChain(): Promise<void> {
+  const w = window as any;
+  if (!w.__ttsPlaybackChain) {
+    w.__ttsPlaybackChain = Promise.resolve();
+  }
+  return w.__ttsPlaybackChain as Promise<void>;
+}
+function setPlaybackChain(p: Promise<void>) {
+  (window as any).__ttsPlaybackChain = p;
+}
+function withExclusivePlayback<T>(fn: () => Promise<T>): Promise<T> {
+  const runner = async () => {
+    try { (window as any).speechSynthesis?.cancel(); } catch {}
+    try { if ((window as any).currentTTSAudio) (window as any).currentTTSAudio.pause(); } catch {}
+    await new Promise(res => setTimeout(res, 20));
+    return fn();
+  };
+  const prev = getPlaybackChain();
+  const p = prev.then(runner, runner);
+  setPlaybackChain(p.then(() => {}, () => {}));
+  return p;
+}
+
 // Build PIPER_VOICE_PRESETS dynamically from persona definitions
 // This ensures voices always come from personas.ts and can't get out of sync
 export const PIPER_VOICE_PRESETS: Record<string, string> = personas.reduce((acc, persona) => {
@@ -43,7 +70,7 @@ export const PIPER_AVAILABLE_VOICES = [
 
 /**
  * Call Piper TTS via Electron IPC
- * 
+ *
  * In Electron, we'll expose a preload API that calls Piper via child_process.
  * For now, we'll use a simple HTTP server approach or direct file generation.
  */
@@ -89,11 +116,11 @@ async function speakWithPiperHTTP(
   personaId?: string
 ): Promise<void> {
   const url = 'http://localhost:5050/api/tts';
-  
+
   const response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text, voice }),
+    body: JSON.stringify({ text, voice, length_scale: 0.86 }),
   });
 
   if (!response.ok) {
@@ -108,7 +135,7 @@ async function speakWithPiperHTTP(
  * Play audio data (WAV format from Piper)
  */
 function playAudioData(audioData: ArrayBuffer, personaId?: string): Promise<void> {
-  return new Promise<void>((resolve, reject) => {
+  return withExclusivePlayback(() => new Promise<void>((resolve, reject) => {
     try {
       const blob = new Blob([audioData], { type: 'audio/wav' });
       const url = URL.createObjectURL(blob);
@@ -226,7 +253,7 @@ function playAudioData(audioData: ArrayBuffer, personaId?: string): Promise<void
     } catch (err) {
       reject(err);
     }
-  });
+  }));
 }
 
 /**
@@ -248,9 +275,9 @@ export async function testPiperConnection(): Promise<{ success: boolean; error?:
     if (response.ok) {
       return { success: true };
     } else {
-      return { 
-        success: false, 
-        error: 'Piper server not responding. Make sure Piper is installed and running.' 
+      return {
+        success: false,
+        error: 'Piper server not responding. Make sure Piper is installed and running.'
       };
     }
   } catch (error) {

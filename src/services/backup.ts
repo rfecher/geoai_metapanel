@@ -4,7 +4,7 @@
  * Integrates with pre-generated backup responses and generic fallbacks
  */
 
-import { loadBackupResponses, findMatchingBackupQuestion, findMatchingBackupQuestionWithConfidence, getGenericFallbackResponse, MatchResult } from './backup-loader';
+import { loadBackupResponses, findMatchingBackupQuestion, findMatchingBackupQuestionWithConfidence, getGenericFallbackResponse, MatchResult } from './backup-loader.js';
 
 export type BackupMode = 'disabled' | 'auto' | 'always' | 'hybrid';
 

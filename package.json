@@ -18,6 +18,8 @@
     "build:linux": "vite build && electron-builder --linux",
     "start": "electron .",
     "preview": "vite preview",
+    "test:context-engine:build": "tsc -p tsconfig.scripts.json",
+    "test:context-engine": "npm run test:context-engine:build && node dist/services/contextEngineTest.js",
     "postinstall": "electron-builder install-app-deps"
   },
   "dependencies": {

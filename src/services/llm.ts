@@ -6,7 +6,7 @@ import {
   recordSuccess,
   recordFailure,
   getBackupMatchConfidence
-} from './backup';
+} from './backup.js';
 
 export type ChatMessage = {
   role: 'system' | 'user' | 'assistant';
@@ -29,6 +29,24 @@ export type LLMConfig = {
   apiKey?: string; // For OpenAI-compatible APIs that require auth
   defaultModel: string;
 };
+// Environment helper that works in both Vite (browser) and Node CLI
+function getIsDev(): boolean {
+  try {
+    // Vite/renderer
+    // @ts-ignore
+    if (typeof import.meta !== 'undefined' && (import.meta as any)?.env && typeof (import.meta as any).env.DEV !== 'undefined') {
+      // @ts-ignore
+      return Boolean((import.meta as any).env.DEV);
+    }
+  } catch {}
+  try {
+    // Node CLI fallback
+    // @ts-ignore
+    return typeof process !== 'undefined' ? process.env.NODE_ENV !== 'production' : false;
+  } catch {}
+  return false;
+}
+
 
 // Preset configurations for common setups
 export const LLM_PRESETS: Record<string, LLMConfig> = {
@@ -48,7 +66,56 @@ export const LLM_PRESETS: Record<string, LLMConfig> = {
     apiKey: '',
     defaultModel: 'gpt-4',
   },
+  mlx: {
+    provider: 'openai',
+    baseUrl: 'http://127.0.0.1:8080',
+    defaultModel: 'mlx-community/Llama-3.2-3B-Instruct-4bit',
+  },
 };
+
+// Remove MLX-LM channel tags like <|analysis|>, <|final|>, etc. from content
+function stripMLXChannelTags(s: string): string {
+  return (s || '').replace(/<\|[^>]+?\|>/g, '');
+}
+
+// Extract only the persona's spoken dialog from LLM responses that may include analysis/final channel tags
+function extractFinalDialog(raw: string): string {
+  let s = String(raw ?? '');
+
+  // Remove analysis blocks like: <|channel|>analysis<|message|> ... <|end|>
+  s = s.replace(/<\|channel\|>analysis<\|message\|>[\s\S]*?<\|end\|>/g, '');
+
+  // Find the last final segment start: optionally prefixed with <|start|>assistant
+  const finalMarker = /(?:<\|start\|>assistant)?<\|channel\|>final<\|message\|>/g;
+  let lastIndex = -1;
+  let m: RegExpExecArray | null;
+  while ((m = finalMarker.exec(s)) !== null) {
+    lastIndex = m.index + m[0].length;
+  }
+
+  let out = lastIndex !== -1 ? s.slice(lastIndex) : s;
+
+  // Cut at the next tag-like token if present
+  const nextTagIdx = out.indexOf('<|');
+  if (nextTagIdx !== -1) {
+    out = out.slice(0, nextTagIdx);
+  }
+
+  // Remove any residual tag tokens like <|...|>
+  out = out.replace(/<\|[^>]+?\|>/g, '');
+
+  // Trim and normalize
+  out = out.trim();
+
+  // Strip surrounding quotes (some fallbacks may return quoted text)
+  if ((out.startsWith('"') && out.endsWith('"')) || (out.startsWith("'") && out.endsWith("'"))) {
+    out = out.slice(1, -1).trim();
+  }
+
+  return out;
+}
+
+
 
 /**
  * Extract the user's question from the message history
@@ -184,13 +251,36 @@ export async function chatWithLLMStreaming(
     // Continue to live LLM below
   }
 
+  // Filter streaming chunks to only emit the 'final' dialog channel
+  const __streamFilterState = { buffer: '', inFinal: false } as { buffer: string; inFinal: boolean };
+  const filteredOnChunk = (chunk: string) => {
+    // Accumulate to handle markers that may split across chunks
+    __streamFilterState.buffer += chunk;
+
+    if (!__streamFilterState.inFinal) {
+      const m = __streamFilterState.buffer.match(/(?:<\|start\|>assistant)?<\|channel\|>final<\|message\|>/);
+      if (m && m.index !== undefined) {
+        __streamFilterState.inFinal = true;
+        const after = __streamFilterState.buffer.slice(m.index + m[0].length);
+        const cleaned = after.replace(/<\|[^>]+?\|>/g, '');
+        if (cleaned) onChunk(cleaned);
+        __streamFilterState.buffer = '';
+      }
+      return; // still in analysis channel; do not emit
+    }
+
+    // Already in final: strip any residual tag tokens and emit
+    const cleaned = chunk.replace(/<\|[^>]+?\|>/g, '');
+    if (cleaned) onChunk(cleaned);
+  };
+
   try {
     let response: string;
     if (provider === 'ollama') {
-      response = await chatWithOllamaStreaming(baseUrl, req, onChunk);
+      response = await chatWithOllamaStreaming(baseUrl, req, filteredOnChunk);
     } else {
       // LM Studio, OpenAI, and other OpenAI-compatible APIs
-      response = await chatWithOpenAICompatibleStreaming(baseUrl, apiKey, req, onChunk);
+      response = await chatWithOpenAICompatibleStreaming(baseUrl, apiKey, req, filteredOnChunk);
     }
 
     // Record success to reset failure counter
@@ -232,7 +322,7 @@ async function chatWithOllama(baseUrl: string, req: ChatRequest): Promise<string
   const data = await res.json();
   const content = data?.message?.content ?? '';
   if (typeof content !== 'string' || !content) throw new Error('Empty content');
-  return content;
+  return extractFinalDialog(content);
 }
 
 /**
@@ -284,7 +374,7 @@ async function chatWithOllamaStreaming(
   }
 
   if (!fullContent) throw new Error('Empty streaming content');
-  return fullContent;
+  return extractFinalDialog(fullContent);
 }
 
 /**
@@ -295,18 +385,23 @@ async function chatWithOpenAICompatible(
   apiKey: string | undefined,
   req: ChatRequest
 ): Promise<string> {
-  // In development, use proxy to avoid CORS issues
+  // Use Vite dev proxy only in browser; Node CLI should hit provider directly
   let url: string;
-  const isDev = import.meta.env.DEV;
+  const isDev = getIsDev();
+  const isBrowser = typeof window !== 'undefined' && typeof document !== 'undefined';
+  const useProxy = isDev && isBrowser;
 
-  if (isDev && baseUrl.includes('localhost:1234')) {
-    // LM Studio - use proxy
+  if (useProxy && baseUrl.includes('localhost:1234')) {
+    // LM Studio - browser dev proxy
     url = '/api/lmstudio/v1/chat/completions';
-  } else if (isDev && baseUrl.includes('localhost:11434')) {
-    // Ollama - use proxy
+  } else if (useProxy && baseUrl.includes('localhost:11434')) {
+    // Ollama - browser dev proxy
     url = '/api/ollama/v1/chat/completions';
+  } else if (useProxy && (baseUrl.includes('localhost:8080') || baseUrl.includes('127.0.0.1:8080'))) {
+    // MLX-LM - browser dev proxy
+    url = '/api/mlxlm/v1/chat/completions';
   } else {
-    // Production or external API - use direct URL
+    // Direct URL for Node CLI or production
     url = `${baseUrl.replace(/\/$/, '')}/v1/chat/completions`;
   }
 
@@ -319,13 +414,19 @@ async function chatWithOpenAICompatible(
     headers['Authorization'] = `Bearer ${apiKey}`;
   }
 
-  console.log('🔵 Sending request to:', url, isDev ? '(via proxy)' : '(direct)');
+  // Sanitize MLX-LM channel tags in messages when targeting MLX
+  const isMLX = baseUrl.includes('127.0.0.1:8080') || baseUrl.includes('localhost:8080');
+  const messages = isMLX
+    ? req.messages.map(m => ({ ...m, content: stripMLXChannelTags(m.content) }))
+    : req.messages;
+
+  console.log('🔵 Sending request to:', url, useProxy ? '(via proxy)' : '(direct)');
   console.log('🔵 Original baseUrl:', baseUrl);
   console.log('🔵 Model:', req.model);
-  console.log('🔵 Messages:', req.messages.length, 'messages');
+  console.log('🔵 Messages:', messages.length, 'messages');
   console.log('🔵 Request body:', JSON.stringify({
     model: req.model,
-    messages: req.messages,
+    messages,
     stream: false,
     ...req.options,
   }, null, 2));
@@ -335,7 +436,7 @@ async function chatWithOpenAICompatible(
     headers,
     body: JSON.stringify({
       model: req.model,
-      messages: req.messages,
+      messages,
       stream: false,
       ...req.options,
     }),
@@ -360,7 +461,7 @@ async function chatWithOpenAICompatible(
   }
 
   console.log('✅ Got response:', content.substring(0, 100) + '...');
-  return content;
+  return extractFinalDialog(content);
 }
 
 /**
@@ -372,18 +473,23 @@ async function chatWithOpenAICompatibleStreaming(
   req: ChatRequest,
   onChunk: (chunk: string) => void
 ): Promise<string> {
-  // In development, use proxy to avoid CORS issues
+  // Use Vite dev proxy only in browser; Node CLI should hit provider directly
   let url: string;
-  const isDev = import.meta.env.DEV;
+  const isDev = getIsDev();
+  const isBrowser = typeof window !== 'undefined' && typeof document !== 'undefined';
+  const useProxy = isDev && isBrowser;
 
-  if (isDev && baseUrl.includes('localhost:1234')) {
-    // LM Studio - use proxy
+  if (useProxy && baseUrl.includes('localhost:1234')) {
+    // LM Studio - browser dev proxy
     url = '/api/lmstudio/v1/chat/completions';
-  } else if (isDev && baseUrl.includes('localhost:11434')) {
-    // Ollama - use proxy
+  } else if (useProxy && baseUrl.includes('localhost:11434')) {
+    // Ollama - browser dev proxy
     url = '/api/ollama/v1/chat/completions';
+  } else if (useProxy && (baseUrl.includes('localhost:8080') || baseUrl.includes('127.0.0.1:8080'))) {
+    // MLX-LM - browser dev proxy
+    url = '/api/mlxlm/v1/chat/completions';
   } else {
-    // Production or external API - use direct URL
+    // Direct URL for Node CLI or production
     url = `${baseUrl.replace(/\/$/, '')}/v1/chat/completions`;
   }
 
@@ -396,14 +502,20 @@ async function chatWithOpenAICompatibleStreaming(
     headers['Authorization'] = `Bearer ${apiKey}`;
   }
 
-  console.log('🔵 Sending streaming request to:', url, isDev ? '(via proxy)' : '(direct)');
+  // Sanitize MLX-LM channel tags in messages when targeting MLX
+  const isMLX = baseUrl.includes('127.0.0.1:8080') || baseUrl.includes('localhost:8080');
+  const messages = isMLX
+    ? req.messages.map(m => ({ ...m, content: stripMLXChannelTags(m.content) }))
+    : req.messages;
+
+  console.log('🔵 Sending streaming request to:', url, useProxy ? '(via proxy)' : '(direct)');
 
   const res = await fetch(url, {
     method: 'POST',
     headers,
     body: JSON.stringify({
       model: req.model,
-      messages: req.messages,
+      messages,
       stream: true,
       ...req.options,
     }),
@@ -458,7 +570,7 @@ async function chatWithOpenAICompatibleStreaming(
   }
 
   console.log('✅ Got streaming response:', fullContent.substring(0, 100) + '...');
-  return fullContent;
+  return extractFinalDialog(fullContent);
 }
 
 /**
@@ -478,12 +590,14 @@ export async function testLLMConnection(config: LLMConfig): Promise<{ success: b
  */
 export async function listModels(config: LLMConfig): Promise<string[]> {
   const { provider, baseUrl, apiKey } = config;
-  const isDev = import.meta.env.DEV;
+  const isDev = getIsDev();
+  const isBrowser = typeof window !== 'undefined' && typeof document !== 'undefined';
+  const useProxy = isDev && isBrowser;
 
   try {
     if (provider === 'ollama') {
       let url: string;
-      if (isDev && baseUrl.includes('localhost:11434')) {
+      if (useProxy && baseUrl.includes('localhost:11434')) {
         url = '/api/ollama/api/tags';
       } else {
         url = `${baseUrl.replace(/\/$/, '')}/api/tags`;
@@ -495,10 +609,12 @@ export async function listModels(config: LLMConfig): Promise<string[]> {
     } else {
       // OpenAI-compatible endpoint
       let url: string;
-      if (isDev && baseUrl.includes('localhost:1234')) {
+      if (useProxy && baseUrl.includes('localhost:1234')) {
         url = '/api/lmstudio/v1/models';
-      } else if (isDev && baseUrl.includes('localhost:11434')) {
+      } else if (useProxy && baseUrl.includes('localhost:11434')) {
         url = '/api/ollama/v1/models';
+      } else if (useProxy && (baseUrl.includes('localhost:8080') || baseUrl.includes('127.0.0.1:8080'))) {
+        url = '/api/mlxlm/v1/models';
       } else {
         url = `${baseUrl.replace(/\/$/, '')}/v1/models`;
       }

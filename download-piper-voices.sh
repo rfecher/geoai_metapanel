@@ -32,7 +32,7 @@ echo ""
 voices=(
     "en_GB-semaine-medium"                   # Maya Ríos (Prudence #0) & Prof. Otto (Obadiah #2)
     "en_US-kathleen-low"                     # Dr. Sarah Hayes
-    "en_US-bryce-medium"                     # Dr. Marcus Webb
+    "en_US-kusal-medium"                     # Dr. Marcus Webb
     "en_US-amy-medium"                       # Lt. Col. Jessica Hayes
 )
 

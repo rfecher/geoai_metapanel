@@ -47,6 +47,12 @@ export default defineConfig(() => ({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/ollama/, ''),
       },
+      // Proxy MLX-LM requests
+      '/api/mlxlm': {
+        target: 'http://127.0.0.1:8080',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/mlxlm/, ''),
+      },
     },
   },
 }));
