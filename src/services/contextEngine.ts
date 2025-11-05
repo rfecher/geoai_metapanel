@@ -253,7 +253,7 @@ export function createContextEngine(config: EngineConfig = {}) {
     ].filter(Boolean).join('\n\n');
 
     const flowControl = `
-You are one panelist on a multi-persona panel. Answer the user's question succinctly with one or two new, high-signal points.
+You are one panelist on a multi-persona panel. Answer the user's question succinctly with one new, high-signal point.
 Avoid repeating yourself or others. If you would only repeat what's already been said, respond with exactly "SKIP".
 Never enter circular back-and-forth; do not restate your credentials. Stay on-topic and practical.`;
 
@@ -263,7 +263,10 @@ Professional panel delivery requirements:
 - Use complete, grammatically correct sentences and express complete thoughts (no fragments).
 - Maintain a natural, conversational tone appropriate for a panel discussion.
 - Avoid incomplete or truncated responses; never trail off.
-- Minimize abbreviations or shorthand that a text-to-speech system may misread; prefer full words (e.g., say "Lieutenant" instead of "Lt.", "Professor" instead of "Prof.").`;
+- Minimize abbreviations or shorthand that a text-to-speech system may misread; prefer full words (e.g., say "Lieutenant" instead of "Lt.", "Professor" instead of "Prof.").
+- If prior responses from this round are included (e.g., "Marcus: …"), and you are not the first speaker, briefly react to at least one by name. Integrate the reaction into your answer (not as a separate sentence), and either agree or disagree.
+- When reacting, always use the other persona’s name explicitly (e.g., "I agree with Marcus that…" or "Sarah, I have to disagree about…").
+- Aim for healthy contrast. If no disagreement has appeared yet this round, disagree with a specific point to add value.`;
 
     const selfAwareness = `
 Awareness for ${personaName}: If you previously spoke this round, avoid repeating your earlier points. Only add genuinely new content; otherwise reply "SKIP".`;

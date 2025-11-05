@@ -156,7 +156,8 @@ async function main() {
     const reqFirst: ChatMessage[] = [sysFirst, { role: 'user', content: q }];
     const modelFirst = personaModelsOverride[first.id] || llmConfig.defaultModel;
     const start1 = Date.now();
-    let firstAnswer = await chatWithLLM(llmConfig, { model: modelFirst, messages: reqFirst, personaId: first.id });
+    const firstResponse = await chatWithLLM(llmConfig, { model: modelFirst, messages: reqFirst, personaId: first.id });
+    let firstAnswer = firstResponse.content;
     const end1 = Date.now();
 
     const kwFirst = extractKeywords(firstAnswer);
@@ -208,7 +209,8 @@ async function main() {
       const reqMsgs: ChatMessage[] = [sys, ...historyAfterFirst, { role: 'user', content: q }];
       const model = personaModelsOverride[p.id] || llmConfig.defaultModel;
       const start = Date.now();
-      let answer = await chatWithLLM(llmConfig, { model, messages: reqMsgs, personaId: p.id });
+      const response = await chatWithLLM(llmConfig, { model, messages: reqMsgs, personaId: p.id });
+      let answer = response.content;
       const end = Date.now();
 
       const kw = extractKeywords(answer);

@@ -282,50 +282,96 @@ export function startRecordingWithVAD(options?: {
       const source = audioContext.createMediaStreamSource(stream);
       analyser = audioContext.createAnalyser();
       analyser.fftSize = 2048;
-      analyser.smoothingTimeConstant = 0.8;
+      analyser.smoothingTimeConstant = 0.6; // slightly less smoothing for quicker response
       source.connect(analyser);
 
-      const bufferLength = analyser.frequencyBinCount;
-      const dataArray = new Uint8Array(bufferLength);
+      // Use time-domain RMS with dynamic noise calibration + hysteresis
+      const timeData = new Uint8Array(analyser.fftSize);
+      const frameMs = 1000 / 60; // ~requestAnimationFrame cadence
+
+      // Calibrate noise floor for first 300ms
+      const calibrationMs = 300;
+      let calibrationUntil = performance.now() + calibrationMs;
+      let noiseRmsAccum = 0;
+      let noiseRmsCount = 0;
+      let calibrated = false;
+      let speechOnThreshold = 0.06;  // default if calibration fails
+      let speechOffThreshold = 0.045; // hysteresis lower than on-threshold
+
+      let speechFrames = 0;
+      let silenceFrames = 0;
+      const speechHoldFrames = 4;  // require ~65ms of continuous speech
+      const silenceHoldFrames = 6; // require ~100ms of continuous silence to flip state
+
+      const rmsFromTimeData = (u8: Uint8Array) => {
+        let sumSq = 0;
+        for (let i = 0; i < u8.length; i++) {
+          const v = (u8[i] - 128) / 128; // [-1, 1]
+          sumSq += v * v;
+        }
+        return Math.sqrt(sumSq / u8.length);
+      };
 
       // Voice activity detection loop
       const checkVoiceActivity = () => {
         if (!analyser || !mediaRecorder || mediaRecorder.state !== 'recording') return;
 
-        analyser.getByteFrequencyData(dataArray);
+        analyser.getByteTimeDomainData(timeData);
+        const rms = rmsFromTimeData(timeData);
 
-        // Calculate average volume
-        const average = dataArray.reduce((sum, value) => sum + value, 0) / bufferLength;
-
-        // Debug: Log volume levels periodically
-        if (Math.random() < 0.05) { // Log ~5% of the time to avoid spam
-          console.log('🎤 Volume level:', Math.round(average));
+        // Calibration phase to set dynamic thresholds based on ambient noise
+        if (!calibrated) {
+          noiseRmsAccum += rms;
+          noiseRmsCount += 1;
+          if (performance.now() >= calibrationUntil) {
+            const noiseFloor = noiseRmsCount ? (noiseRmsAccum / noiseRmsCount) : 0.015;
+            // Set thresholds relative to noise floor with bounds
+            speechOnThreshold = Math.min(Math.max(noiseFloor + 0.03, 0.035), 0.12);
+            speechOffThreshold = Math.max(speechOnThreshold - 0.015, 0.02);
+            calibrated = true;
+            console.log('🎤 VAD calibrated:', { noiseFloor: +noiseFloor.toFixed(4), speechOnThreshold: +speechOnThreshold.toFixed(4), speechOffThreshold: +speechOffThreshold.toFixed(4) });
+          }
+          // Continue checking during calibration
+          requestAnimationFrame(checkVoiceActivity);
+          return;
         }
 
-        // Threshold for speech detection (adjust based on testing)
-        const speechThreshold = 20; // Lower = more sensitive
-        const isSpeakingNow = average > speechThreshold;
+        // Apply hysteresis + short frame holds to avoid rapid toggling on background noise
+        const aboveOn = rms > speechOnThreshold;
+        const aboveOff = rms > speechOffThreshold;
 
-        if (isSpeakingNow && !isSpeaking) {
-          // Speech started
-          isSpeaking = true;
-          hasSpoken = true;
-          if (silenceTimer) clearTimeout(silenceTimer);
-          if (options?.onSpeechStart) options.onSpeechStart();
-          console.log('🎤 Speech detected, average volume:', Math.round(average));
-        } else if (!isSpeakingNow && isSpeaking) {
-          // Speech stopped
-          isSpeaking = false;
-          if (options?.onSpeechEnd) options.onSpeechEnd();
-          console.log('🎤 Silence detected, starting timer...');
-
-          // Start silence timer only if user has spoken
-          if (hasSpoken) {
-            console.log(`🎤 Will auto-stop in ${silenceThreshold}ms if silence continues`);
-            silenceTimer = setTimeout(() => {
-              console.log('🎤 Auto-stopping after silence');
-              stopRecording();
-            }, silenceThreshold);
+        if (isSpeaking) {
+          if (aboveOff) {
+            silenceFrames = 0;
+          } else {
+            silenceFrames++;
+            if (silenceFrames >= silenceHoldFrames) {
+              isSpeaking = false;
+              if (options?.onSpeechEnd) options.onSpeechEnd();
+              console.log('🎤 Silence detected (RMS):', rms.toFixed(3), '→ starting timer');
+              // Start silence timer only if user has spoken
+              if (hasSpoken) {
+                if (silenceTimer) clearTimeout(silenceTimer);
+                console.log(`🎤 Will auto-stop in ${silenceThreshold}ms if silence continues`);
+                silenceTimer = setTimeout(() => {
+                  console.log('🎤 Auto-stopping after sustained silence');
+                  stopRecording();
+                }, silenceThreshold);
+              }
+            }
+          }
+        } else {
+          if (aboveOn) {
+            speechFrames++;
+            if (speechFrames >= speechHoldFrames) {
+              isSpeaking = true;
+              hasSpoken = true;
+              if (silenceTimer) clearTimeout(silenceTimer);
+              if (options?.onSpeechStart) options.onSpeechStart();
+              console.log('🎤 Speech detected (RMS):', rms.toFixed(3));
+            }
+          } else {
+            speechFrames = 0;
           }
         }
 

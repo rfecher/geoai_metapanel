@@ -85,8 +85,48 @@ app.on('before-quit', async (event) => {
 });
 
 // ============================================================================
-// Piper TTS IPC Handlers
+// Piper TTS IPC Handlers (with request queue to serialize synthesis)
 // ============================================================================
+
+// Simple FIFO queue to serialize Piper synthesis requests. This avoids
+// concurrency issues observed when multiple piper processes run at once.
+// Only affects the Piper provider; other TTS providers are unaffected.
+
+type PiperTask<T> = () => Promise<T>;
+const piperQueue: Array<{ id: number; fn: PiperTask<any>; resolve: (v: any) => void; reject: (e: any) => void; }> = [];
+let piperProcessing = false;
+let piperTaskCounter = 0;
+
+function enqueuePiper<T>(fn: PiperTask<T>): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const id = ++piperTaskCounter;
+    piperQueue.push({ id, fn, resolve, reject });
+    console.log(`🟡 Piper queue: enqueued task #${id}. Pending ahead: ${piperQueue.length - 1}`);
+    // Defer processing to next tick so rapid bursts coalesce cleanly
+    process.nextTick(processPiperQueue);
+  });
+}
+
+async function processPiperQueue() {
+  if (piperProcessing) return;
+  const next = piperQueue.shift();
+  if (!next) return;
+  piperProcessing = true;
+  const start = Date.now();
+  console.log(`🟠 Piper queue: starting task #${next.id}. Remaining in queue: ${piperQueue.length}`);
+  try {
+    const res = await next.fn();
+    next.resolve(res);
+    console.log(`🟢 Piper queue: finished task #${next.id} in ${Date.now() - start}ms`);
+  } catch (err) {
+    console.error(`🔴 Piper queue: task #${next.id} failed`, err);
+    next.reject(err);
+  } finally {
+    piperProcessing = false;
+    // Continue with the next task (if any)
+    process.nextTick(processPiperQueue);
+  }
+}
 
 /**
  * Find the piper executable
@@ -184,128 +224,132 @@ async function cleanupAllTempFiles(): Promise<void> {
 /**
  * Generate speech with Piper and return audio data
  */
-ipcMain.handle('piper-speak', async (_event, text: string, voice: string) => {
-  try {
-    console.log('🎤 Piper TTS request:', { text: text.substring(0, 50), voice });
-
-    // Find piper executable
-    const piperPath = await findPiper();
-    if (!piperPath) {
-      throw new Error('Piper executable not found. Install with: pip install piper-tts');
-    }
-
-    // Create temporary files with unique names
-    const timestamp = Date.now();
-    const textFile = join(tmpdir(), `piper-${timestamp}.txt`);
-    const audioFile = join(tmpdir(), `piper-${timestamp}.wav`);
-
-    // Track temp files for cleanup
-    tempFiles.add(textFile);
-    tempFiles.add(audioFile);
-
+ipcMain.handle('piper-speak', async (_event, text: string, voice: string, opts?: { lengthScale?: number }) => {
+  // Serialize execution via the Piper queue to avoid concurrent piper processes
+  return enqueuePiper(async () => {
     try {
-      // Write text to temp file
-      await writeFile(textFile, text, 'utf-8');
+      console.log('🎤 Piper TTS request:', { text: text.substring(0, 50), voice });
 
-      // Piper expects a path to .onnx model file, not just a model name
-      // Check if voice is a path or a model name
-      // Also handle speaker selection for multi-speaker models (format: voice#speaker_id)
-      let modelPath = voice;
-      let speakerId: string | null = null;
-
-      // Check if voice includes speaker ID (e.g., "en_GB-semaine-medium#0")
-      if (voice.includes('#')) {
-        const [voiceName, speaker] = voice.split('#');
-        modelPath = voiceName;
-        speakerId = speaker;
-        console.log(`🎤 Multi-speaker model detected: ${voiceName}, speaker: ${speakerId}`);
+      // Find piper executable
+      const piperPath = await findPiper();
+      if (!piperPath) {
+        throw new Error('Piper executable not found. Install with: pip install piper-tts');
       }
 
-      if (!modelPath.endsWith('.onnx')) {
-        // Try to find the model in common locations and in the project root
-        const projectRoot = join(ROOT_DIR, '..');
-        const possiblePaths = [
-          join(projectRoot, `${modelPath}.onnx`),
-          `${process.env.HOME}/.local/share/piper-tts/${modelPath}.onnx`,
-          `${process.env.HOME}/Library/Python/3.9/share/piper-tts/${modelPath}.onnx`,
-          `/usr/local/share/piper-tts/${modelPath}.onnx`,
-        ];
+      // Create temporary files with unique names
+      const nonce = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const textFile = join(tmpdir(), `piper-${nonce}.txt`);
+      const audioFile = join(tmpdir(), `piper-${nonce}.wav`);
 
-        let found = false;
-        for (const path of possiblePaths) {
-          try {
-            const { access } = await import('node:fs/promises');
-            await access(path);
-            modelPath = path;
-            found = true;
-            console.log(`✅ Found model at: ${path}`);
-            break;
-          } catch {
-            // Try next path
+      // Track temp files for cleanup
+      tempFiles.add(textFile);
+      tempFiles.add(audioFile);
+
+      try {
+        // Write text to temp file
+        await writeFile(textFile, text, 'utf-8');
+
+        // Piper expects a path to .onnx model file, not just a model name
+        // Check if voice is a path or a model name
+        // Also handle speaker selection for multi-speaker models (format: voice#speaker_id)
+        let modelPath = voice;
+        let speakerId: string | null = null;
+
+        // Check if voice includes speaker ID (e.g., "en_GB-semaine-medium#0")
+        if (voice.includes('#')) {
+          const [voiceName, speaker] = voice.split('#');
+          modelPath = voiceName;
+          speakerId = speaker;
+          console.log(`🎤 Multi-speaker model detected: ${voiceName}, speaker: ${speakerId}`);
+        }
+
+        if (!modelPath.endsWith('.onnx')) {
+          // Try to find the model in common locations and in the project root
+          const projectRoot = join(ROOT_DIR, '..');
+          const possiblePaths = [
+            join(projectRoot, `${modelPath}.onnx`),
+            `${process.env.HOME}/.local/share/piper-tts/${modelPath}.onnx`,
+            `${process.env.HOME}/Library/Python/3.9/share/piper-tts/${modelPath}.onnx`,
+            `/usr/local/share/piper-tts/${modelPath}.onnx`,
+          ];
+
+          let found = false;
+          for (const path of possiblePaths) {
+            try {
+              const { access } = await import('node:fs/promises');
+              await access(path);
+              modelPath = path;
+              found = true;
+              console.log(`✅ Found model at: ${path}`);
+              break;
+            } catch {
+              // Try next path
+            }
+          }
+
+          if (!found) {
+            throw new Error(`Piper voice model not found: ${voice}\n\nPlease download models from: https://github.com/rhasspy/piper/releases\nExtract to: ~/.local/share/piper-tts/ or place <model>.onnx at the project root.\n\nOr use Web Speech API instead.`);
           }
         }
 
-        if (!found) {
-          throw new Error(`Piper voice model not found: ${voice}\n\nPlease download models from: https://github.com/rhasspy/piper/releases\nExtract to: ~/.local/share/piper-tts/ or place <model>.onnx at the project root.\n\nOr use Web Speech API instead.`);
+        // Call Piper using stdin redirection from file (more reliable than echo for long text)
+        // Add --speaker parameter if speaker ID is specified
+        const speakerParam = speakerId !== null ? ` --speaker ${speakerId}` : '';
+        const lengthScale = (opts && typeof opts.lengthScale === "number") ? opts.lengthScale : 0.86;
+        const command = `cat "${textFile}" | "${piperPath}" --model "${modelPath}"${speakerParam} --length_scale ${lengthScale} --output-file "${audioFile}"`;
+
+        console.log('🔵 Executing Piper with text file input');
+        console.log('🔵 Command:', command);
+        const { stdout, stderr } = await execAsync(command, {
+          maxBuffer: 10 * 1024 * 1024, // 10MB buffer
+          timeout: 30000, // 30 second timeout
+        });
+
+        if (stdout) {
+          console.log('Piper stdout:', stdout);
         }
+        if (stderr) {
+          console.warn('Piper stderr:', stderr);
+        }
+
+        // Read the generated audio file
+        const { readFile } = await import('node:fs/promises');
+        const audioData = await readFile(audioFile);
+
+        // Clean up temp files immediately after reading
+        await cleanupTempFile(textFile);
+        await cleanupTempFile(audioFile);
+
+        console.log('✅ Piper TTS generated:', audioData.byteLength, 'bytes');
+        return audioData.buffer;
+      } catch (error) {
+        // Clean up on error
+        await cleanupTempFile(textFile);
+        await cleanupTempFile(audioFile);
+
+        // Log detailed error information
+        console.error('❌ Piper command failed:', error);
+        if (error && typeof error === 'object' && 'stderr' in error) {
+          console.error('Piper stderr:', (error as any).stderr);
+        }
+        if (error && typeof error === 'object' && 'stdout' in error) {
+          console.error('Piper stdout:', (error as any).stdout);
+        }
+
+        throw error;
       }
-
-      // Call Piper using stdin redirection from file (more reliable than echo for long text)
-      // Add --speaker parameter if speaker ID is specified
-      const speakerParam = speakerId !== null ? ` --speaker ${speakerId}` : '';
-      const command = `cat "${textFile}" | "${piperPath}" --model "${modelPath}"${speakerParam} --length_scale 0.86 --output-file "${audioFile}"`;
-
-      console.log('🔵 Executing Piper with text file input');
-      console.log('🔵 Command:', command);
-      const { stdout, stderr } = await execAsync(command, {
-        maxBuffer: 10 * 1024 * 1024, // 10MB buffer
-        timeout: 30000, // 30 second timeout
-      });
-
-      if (stdout) {
-        console.log('Piper stdout:', stdout);
-      }
-      if (stderr) {
-        console.warn('Piper stderr:', stderr);
-      }
-
-      // Read the generated audio file
-      const { readFile } = await import('node:fs/promises');
-      const audioData = await readFile(audioFile);
-
-      // Clean up temp files immediately after reading
-      await cleanupTempFile(textFile);
-      await cleanupTempFile(audioFile);
-
-      console.log('✅ Piper TTS generated:', audioData.byteLength, 'bytes');
-      return audioData.buffer;
     } catch (error) {
-      // Clean up on error
-      await cleanupTempFile(textFile);
-      await cleanupTempFile(audioFile);
+      console.error('❌ Piper TTS error:', error);
 
-      // Log detailed error information
-      console.error('❌ Piper command failed:', error);
+      // Extract more detailed error message
+      let errorMsg = error instanceof Error ? error.message : String(error);
       if (error && typeof error === 'object' && 'stderr' in error) {
-        console.error('Piper stderr:', (error as any).stderr);
-      }
-      if (error && typeof error === 'object' && 'stdout' in error) {
-        console.error('Piper stdout:', (error as any).stdout);
+        errorMsg += `\nStderr: ${(error as any).stderr}`;
       }
 
-      throw error;
+      throw new Error(`Piper TTS failed: ${errorMsg}`);
     }
-  } catch (error) {
-    console.error('❌ Piper TTS error:', error);
-
-    // Extract more detailed error message
-    let errorMsg = error instanceof Error ? error.message : String(error);
-    if (error && typeof error === 'object' && 'stderr' in error) {
-      errorMsg += `\nStderr: ${(error as any).stderr}`;
-    }
-
-    throw new Error(`Piper TTS failed: ${errorMsg}`);
-  }
+  });
 });
 
 // ============================================================================

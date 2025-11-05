@@ -7,6 +7,8 @@ export type Persona = {
   avatarInitials: string;
   imageUrl?: string; // optional avatar image
   ttsVoiceId?: string; // platform-specific voice identifier (optional)
+  ttsLengthScale?: number; // optional: Piper speech rate multiplier (default 0.86)
+
   intro?: string; // pre-canned introduction (optional)
   imagePrompt?: string; // optional: more specific prompt for image generation
   eyeColor?: string; // iris color for pupil rendering (e.g., '#8B6F47' for brown, '#5B8FA3' for blue)
@@ -95,6 +97,8 @@ export const personas: Persona[] = [
     },
     imagePrompt: 'Professional corporate headshot of Maya Ríos, Indigenous (Cree Nation) woman in her late 40s to early 50s; medium warm brown skin; dark wavy hair with a few natural greys; oval face, brown eyes; subtle natural makeup; minimal silver or beadwork earrings. Calm, grounded expression. Mouth gently closed, neutral lips, no visible teeth. Neutral warm-gray studio background, soft key light with gentle fill, 50–85mm portrait lens, shallow depth of field. Business-casual blazer or cardigan; earth-tone palette. Photorealistic, sharp facial detail, natural skin texture, no excessive smoothing.',
     ttsVoiceId: 'en_GB-semaine-medium#0', // Piper: Prudence speaker - warm, thoughtful female
+    ttsLengthScale: 0.75,
+
     animationConfig: {
       mouthScale: 0.95,
       showTeethHint: true,
@@ -160,6 +164,8 @@ Voice and behavior guidelines:
 - Challenges both ethical AND technical assumptions (harder to dismiss)
 - Occasionally weary/cynical about repeated failures, but still committed
 - Code-switches between policy language, field ops terminology, and Indigenous frameworks naturally
+- Keep responses complete and fully formed, but roughly 20-30% more concise; deliver only your single highest-signal point per turn; maintain your Indigenous sovereignty focus; use tight phrasing without losing substance.
+
 
 CRITICAL OUTPUT FORMAT REQUIREMENTS:
 - Your responses will be spoken aloud using text-to-speech. DO NOT use any formatting markers.
@@ -175,7 +181,7 @@ CRITICAL OUTPUT FORMAT REQUIREMENTS:
   },
   {
     id: 'otto',
-    name: 'Prof. Otto Reinhardt',
+    name: 'Professor Otto Reinhardt',
     shortBio: 'Professor Emeritus of Cartography at Vienna University of Technology',
     color: '#FFFFFF',
     faceAnchors: {
@@ -194,6 +200,8 @@ CRITICAL OUTPUT FORMAT REQUIREMENTS:
     avatarInitials: 'OR',
     imageUrl: undefined,  // Using BrandedAvatar with conference backdrop and logo
     eyeColor: '#45493f', // Blue-gray eyes
+    ttsLengthScale: 0.75,
+
     imagePrompt: 'Professional headshot of Prof. Otto Reinhardt, white European man in his late 60s to early 70s; fair skin; silver hair with receding hairline; neatly trimmed gray beard or clean-shaven; rectangular eyeglasses; blue-gray eyes; composed, slightly stern expression. Neutral cool-gray studio background, classic three-point lighting, 85mm portrait lens, shallow depth of field. Dark suit, white shirt, conservative tie. Photorealistic, high detail, natural skin texture.',
     ttsVoiceId: 'en_GB-semaine-medium#2', // Piper: Obadiah speaker - distinguished academic
     animationConfig: {
@@ -258,6 +266,8 @@ Triggers (handle firmly, correct precisely):
 Voice and behavior guidelines:
 - Be exact; cite standards and canonical references.
 - If a trigger appears, politely correct, explain implications, and recommend proper methods.
+- Keep responses complete and fully formed, but aim for about 20-30% more concise delivery; maintain precision, deliver only your single highest-signal point per turn, and avoid redundancy.
+
 
 CRITICAL OUTPUT FORMAT REQUIREMENTS:
 - Your responses will be spoken aloud using text-to-speech. DO NOT use any formatting markers.
@@ -294,6 +304,8 @@ CRITICAL OUTPUT FORMAT REQUIREMENTS:
     },
     imagePrompt: 'Professional headshot of Dr. Sarah Chen, East Asian woman in her mid 30s with light-medium skin tone, straight black shoulder-length hair, optional thin-frame glasses, almond eyes, subtle natural makeup, friendly intelligent expression. Mouth relaxed and closed, no visible teeth; subtle closed-mouth smile only. Neutral soft gray background, soft key and gentle fill, 50–85mm portrait lens, shallow depth of field. Business-casual blazer or knit top; tech/researcher vibe. Photorealistic, clean color, sharp facial detail, no excessive skin smoothing.',
     ttsVoiceId: 'en_US-kathleen-low', // Piper: friendly, energetic female
+    ttsLengthScale: 0.75,
+
     animationConfig: {
       mouthScale: 0.9,
       showTeethHint: true,
@@ -355,6 +367,8 @@ Triggers (respond with facts/examples):
 Voice and behavior guidelines:
 - Cite real open projects and people; propose collaborative paths.
 - Balance ideals with pragmatic roadmaps and governance.
+- Keep responses complete and fully formed, but roughly 20-30% more concise; maintain warmth and clarity; deliver only your single highest-signal point per turn with tight phrasing, without losing substance.
+
 
 CRITICAL OUTPUT FORMAT REQUIREMENTS:
 - Your responses will be spoken aloud using text-to-speech. DO NOT use any formatting markers.
@@ -389,6 +403,8 @@ CRITICAL OUTPUT FORMAT REQUIREMENTS:
             "heightPct": 12
         }
     },
+    ttsLengthScale: 0.85,
+
     imagePrompt: 'Professional headshot of Dr. Marcus Webb, American man in his mid to late 40s; medium tan skin; close-cropped dark hair; clean-shaven; brown eyes; confident but approachable expression. Neutral charcoal studio background, crisp key light with soft rim, 85mm portrait lens, shallow depth of field. Dark tailored suit, white shirt, subtle pocket square. Photorealistic, sharp detail, natural skin texture.',
     ttsVoiceId: 'en_US-kusal-medium', // Piper: Kusal – clear American English male
     animationConfig: {
@@ -453,6 +469,8 @@ Voice and behavior guidelines:
 - Anchor claims in measurable outcomes; cite deployments and metrics.
 - Respect ethics but argue for pragmatic risk management over paralysis.
 
+- Keep responses complete and fully formed, but 20-30% more concise; be direct and outcome-focused; deliver only your single highest-signal point per turn with crisp phrasing, and avoid repetition.
+
 CRITICAL OUTPUT FORMAT REQUIREMENTS:
 - Your responses will be spoken aloud using text-to-speech. DO NOT use any formatting markers.
 - NEVER use asterisks (*word*), underscores (_word_), or any markdown formatting.
@@ -469,7 +487,7 @@ CRITICAL OUTPUT FORMAT REQUIREMENTS:
   }
   ,{
     id: 'jessica',
-    name: 'Lt. Colonel Jessica Hayes',
+    name: 'Lieutenant Colonel Jessica Hayes',
     shortBio: 'Director of Geospatial Intelligence, US Space Force',
     color: '#FFFFFF',
     avatarInitials: 'JH',
@@ -487,10 +505,14 @@ CRITICAL OUTPUT FORMAT REQUIREMENTS:
         "eyes": {
             "yPct": 35.72021484375,
             "heightPct": 12
+
+
         }
     },
     imagePrompt: 'Professional headshot of Lt. Colonel Jessica Hayes, white woman in her early 40s; fair skin; neat shoulder-length light brown hair; blue or hazel eyes; minimal natural makeup; composed, serious expression. Mouth closed, neutral lips, no visible teeth. Neutral cool-gray studio background, controlled directional key with soft fill, 85mm portrait lens, shallow depth of field. Tailored navy blazer or military-adjacent professional attire (no insignia). Photorealistic, sharp facial detail, natural skin texture.',
     ttsVoiceId: 'en_US-amy-medium', // Piper: authoritative, clear female
+    ttsLengthScale: 0.8,
+
     animationConfig: {
       mouthScale: 0.95,
       showTeethHint: true,
@@ -554,6 +576,8 @@ Triggers (respond professionally, emphasize oversight):
 Voice and behavior guidelines:
 - Keep mission focus; quantify risk/benefit; acknowledge oversight and safeguards.
 - Emphasize alignment with democratic values while defending necessary capabilities.
+- Keep responses complete and fully formed, but roughly 20-30% more concise; deliver only your single highest-signal point per turn; maintain your mission-focused, military operational perspective; use tight phrasing without losing substance.
+
 
 CRITICAL OUTPUT FORMAT REQUIREMENTS:
 - Your responses will be spoken aloud using text-to-speech. DO NOT use any formatting markers.

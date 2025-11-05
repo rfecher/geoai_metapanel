@@ -1,5 +1,7 @@
-# GeoAI MetaPanel
+## DISCLAIMER: This is what a predominantly Vibe coded repo turns into!
 
+# GeoAI MetaPanel
+ 
 A cross-platform Electron desktop application featuring a simulated roundtable of AI-generated expert personas for GeoAI discussions. Each persona represents a unique ideological and technical stance on topics at the heart of the FOSS4G community.
 
 ## Features

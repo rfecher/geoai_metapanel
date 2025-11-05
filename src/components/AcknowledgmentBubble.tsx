@@ -7,6 +7,7 @@ type Props = {
   isUser?: boolean;
   showTypingIndicator?: boolean;
   acknowledgmentText?: string; // Optional pre-selected acknowledgment text
+  isBackupResponse?: boolean; // If true, skip acknowledgment (backup responses don't need "thinking" indicators)
 };
 
 /**
@@ -18,21 +19,17 @@ const ACKNOWLEDGMENTS: Record<string, string[]> = {
     "Let me consider that...",
     "That's an important question...",
     "Thinking about the implications...",
-    "From a community perspective...",
     "Let me reflect on this...",
   ],
   otto: [
     "Interesting query...",
     "Let me examine this systematically...",
-    "From a technical standpoint...",
-    "Analyzing the specifications...",
-    "Let me consult the standards...",
+    "I need to analyze this...",
   ],
   marcus: [
     "Good question...",
     "Let me break this down...",
     "Here's what I'm thinking...",
-    "From a strategic angle...",
     "Let me assess this...",
   ],
   aria: [
@@ -45,8 +42,6 @@ const ACKNOWLEDGMENTS: Record<string, string[]> = {
   jessica: [
     "Noted...",
     "Analyzing the situation...",
-    "From an operational perspective...",
-    "Assessing the tactical implications...",
     "Let me evaluate this...",
   ],
 };
@@ -67,8 +62,14 @@ export function getAcknowledgment(personaId: string): string {
 /**
  * Acknowledgment bubble component
  * Shows a brief acknowledgment message with typing indicator
+ * Skips rendering for backup/demo responses (they don't need "thinking" indicators)
  */
-export default function AcknowledgmentBubble({ persona, isUser = false, showTypingIndicator = true, acknowledgmentText }: Props) {
+export default function AcknowledgmentBubble({ persona, isUser = false, showTypingIndicator = true, acknowledgmentText, isBackupResponse = false }: Props) {
+  // Skip acknowledgment for backup responses - they're pre-generated and don't need "thinking" indicators
+  if (isBackupResponse) {
+    return null;
+  }
+
   // Use provided acknowledgmentText if available, otherwise generate one
   const [acknowledgment] = useState(() => acknowledgmentText || getAcknowledgment(persona.id));
   const [showText, setShowText] = useState(!showTypingIndicator); // If no typing indicator, show text immediately

@@ -13,6 +13,15 @@
 import { personas } from '../data/personas';
 
 
+export const PIPER_DEFAULT_LENGTH_SCALE = 0.86;
+export function piperLengthScaleForPersona(personaId?: string): number {
+  if (!personaId) return PIPER_DEFAULT_LENGTH_SCALE;
+  const p = personas.find(pp => pp.id === personaId);
+  const v = p?.ttsLengthScale;
+  return typeof v === 'number' && v > 0 ? v : PIPER_DEFAULT_LENGTH_SCALE;
+}
+
+
 // ----------------------------------------------------------------------------
 // Share the same global exclusive playback queue (via window) used by TTS service
 // ----------------------------------------------------------------------------
@@ -91,7 +100,8 @@ export async function speakWithPiper(
     // Check if we're in Electron with IPC available
     if (window.electron?.piperSpeak) {
       console.log('🔵 Using Electron IPC for Piper');
-      const audioData = await window.electron.piperSpeak(text, voice);
+      const lengthScale = piperLengthScaleForPersona(personaId);
+      const audioData = await window.electron.piperSpeak(text, voice, { lengthScale });
       console.log('✅ Got audio data:', audioData.byteLength, 'bytes');
       return playAudioData(audioData, personaId);
     } else {
@@ -120,7 +130,7 @@ async function speakWithPiperHTTP(
   const response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text, voice, length_scale: 0.86 }),
+    body: JSON.stringify({ text, voice, length_scale: piperLengthScaleForPersona(personaId) }),
   });
 
   if (!response.ok) {
@@ -293,7 +303,7 @@ declare global {
   interface Window {
     electron?: {
       // Piper
-      piperSpeak?: (text: string, voice: string) => Promise<ArrayBuffer>;
+      piperSpeak?: (text: string, voice: string, options?: { lengthScale?: number }) => Promise<ArrayBuffer>;
       piperTest?: () => Promise<{ success: boolean; error?: string }>;
       // Calibration
       calibrationLoad?: () => Promise<{ success: boolean; data?: Record<string, any>; error?: string }>;

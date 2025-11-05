@@ -4,8 +4,8 @@ import { contextBridge, ipcRenderer } from 'electron';
 // Expose Piper TTS, Whisper STT, and openWakeWord APIs to renderer
 contextBridge.exposeInMainWorld('electron', {
   // Piper TTS
-  piperSpeak: async (text: string, voice: string): Promise<ArrayBuffer> => {
-    return await ipcRenderer.invoke('piper-speak', text, voice);
+  piperSpeak: async (text: string, voice: string, options?: { lengthScale?: number }): Promise<ArrayBuffer> => {
+    return await ipcRenderer.invoke('piper-speak', text, voice, options);
   },
   piperTest: async (): Promise<{ success: boolean; error?: string }> => {
     return await ipcRenderer.invoke('piper-test');

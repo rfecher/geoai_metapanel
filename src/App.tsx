@@ -15,7 +15,7 @@ import { startRecordingWithVAD, whisperTranscribe, whisperTest, type WhisperMode
 import AcknowledgmentBubble, { getAcknowledgment } from './components/AcknowledgmentBubble';
 
 import { startLocalWakeWord, testLocalWakeWord, isLocalWakeWordSupported } from './services/localwakeword';
-import { setBackupConfig, getBackupStatus, addBackupStateListener, removeBackupStateListener, getBackupMatchConfidence, type BackupMode } from './services/backup';
+import { setBackupConfig, getBackupStatus, addBackupStateListener, removeBackupStateListener, getBackupMatchConfidence, shouldUseBackup, isHybridMode, shouldUseBackupInHybridMode, type BackupMode } from './services/backup';
 import { createContextEngine } from './services/contextEngine';
 
 type Msg = {
@@ -27,9 +27,20 @@ type Msg = {
   color: string;
   isAcknowledgment?: boolean; // Flag for temporary acknowledgment messages
   isStreaming?: boolean; // Flag for messages currently being streamed
+  isBackup?: boolean; // Flag for responses from backup/demo system (not live LLM)
 };
 
 let ttsChain: Promise<void> = Promise.resolve();
+
+
+// Pre-canned, in-character mic check lines per persona (1–2 sentences max)
+const MIC_CHECK_LINES: Record<string, string> = {
+  maya: "Maya here. Audio is clear on my side. Ready to begin.",
+  otto: "This is Otto. Signal is clear here. Let's proceed.",
+  marcus: "Marcus checking in. Coming through fine on my end; let's keep it crisp.",
+  jessica: "Jessica is here. Comms are loud and clear. Ready to go.",
+  sarah: "Sarah here — loud and clear! Excited to kick things off.",
+};
 
 function buildHistoryChat(messagesState: Msg[], maxItems = 20, currentQuestionOnly = false): ChatMessage[] {
   // Convert prior UI messages to Ollama chat history
@@ -125,6 +136,10 @@ export default function App() {
     color: string;
     text: string;
   } | null>(null);
+
+
+  // Mic check state
+  const [isMicCheckRunning, setIsMicCheckRunning] = useState(false);
 
 
   // Debug: track meetingMode, captionsEnabled, and activeCaption changes
@@ -488,6 +503,64 @@ export default function App() {
 
 
 
+  // One-tap panelist mic check: each persona gives a brief, in-character audio confirmation
+  const runMicCheck = useCallback(async () => {
+    if (isMicCheckRunning || busy || selectedPersonas.length === 0) return;
+    setIsMicCheckRunning(true);
+    setBusy(true);
+    try {
+      const hostMsg: Msg = {
+        id: `m-${Date.now()}-host-mic`,
+        role: 'user',
+        author: 'Host',
+        text: 'Quick mic check: panel, please confirm audio is clear.',
+        color: '#6B7280',
+      };
+      setMessages(prev => [...prev, hostMsg]);
+      contextEngineRef.current.ingestMessage({ id: hostMsg.id, role: 'user', text: hostMsg.text, timestamp: Date.now(), excludeFromHistory: true });
+      scrollToEnd();
+
+      for (const p of selectedPersonas) {
+        const line = MIC_CHECK_LINES[p.id] || `This is ${p.name}. Loud and clear.`;
+
+        // Record to transcript immediately (and exclude from long-term CE history)
+        const msg: Msg = { id: `m-${Date.now()}-${p.id}-mic`, role: 'assistant', personaId: p.id, author: p.name, text: line, color: p.color };
+        setMessages(prev => [...prev, msg]);
+        contextEngineRef.current.ingestMessage({ id: msg.id, role: 'assistant', personaId: p.id, author: p.name, text: line, timestamp: Date.now(), excludeFromHistory: true });
+        scrollToEnd();
+
+        // Prepare TTS settings snapshot
+        const settings: TTSSettings = {
+          provider: ttsProvider,
+          defaultVoice,
+          personaVoices,
+          azureRegion,
+          azureKey,
+          elevenApiKey: elevenKey,
+        };
+
+        // Pre-generate where possible (Azure/Eleven); Piper will fall back to live generation
+        const ttsPromise = ttsPreGenerate(line, settings, p.id);
+
+        // Pin speaker in layout and play sequentially
+        setLayoutPinnedSpeakerId(p.id);
+
+        await speakQueued(line, p.id, ttsPromise, () => setLayoutPinnedSpeakerId(p.id));
+
+        await new Promise(res => setTimeout(res, 120)); // brief pacing between panelists
+      }
+    } catch (err) {
+      console.error('Mic check failed:', err);
+    } finally {
+      setIsMicCheckRunning(false);
+      setBusy(false);
+      setLayoutPinnedSpeakerId(null);
+
+      setActiveCaption(null);
+    }
+  }, [isMicCheckRunning, busy, selectedPersonas, ttsProvider, defaultVoice, personaVoices, azureRegion, azureKey, elevenKey, speakQueued]);
+
+
   // Clear personaVoices when switching to Piper (voices come from persona definitions)
   useEffect(() => {
     if (ttsProvider === 'piper') {
@@ -693,26 +766,47 @@ export default function App() {
 
   // Robust check for "SKIP" control token that sometimes arrives with labels/quotes
 
-  // Orchestrated persona-first pipeline round powered by Context Engine
+  // Helper function to determine if a question will use backup response
+  const willUseBackupResponse = (question: string): boolean => {
+    // Check if backup mode is always on
+    if (shouldUseBackup()) {
+      return true;
+    }
+
+    // Check if hybrid mode with strong match
+    if (isHybridMode() && shouldUseBackupInHybridMode(question)) {
+      return true;
+    }
+
+    // Check for recognized demo questions (high confidence match)
+    const match = getBackupMatchConfidence(question);
+    if (match?.questionId && match.confidence >= 0.75) {
+      return true;
+    }
+
+    return false;
+  };
+
+  // Orchestrated persona-first pipeline round powered by Context Engine (sequential + reactive)
   async function handlePersonaRound(question: string, baseHistory: ChatMessage[]): Promise<void> {
     const engine = contextEngineRef.current;
 
-    // Start round and choose first speaker
+    // Start round and randomize speaking order
     const participants = selectedPersonas.map(p => p.id);
     engine.startRound(question, participants);
-    const firstId = engine.selectFirstPanelist(participants);
-    const first = selectedPersonas.find(p => p.id === firstId) || selectedPersonas[0];
-    const others = selectedPersonas.filter(p => p.id !== first.id);
+    const order = [...selectedPersonas].sort(() => Math.random() - 0.5);
+
     // Pin first speaker in layout to prevent grid flash during placeholder→real response transition
+    const first = order[0];
     setLayoutPinnedSpeakerId(first.id);
+
     // Log round models per persona
     try {
       console.log('🟡 [CE] Round start', {
         question: question.slice(0, 180),
-        participants: selectedPersonas.map(p => ({ id: p.id, name: p.name, model: personaModels[p.id] || llmConfig.defaultModel }))
+        participants: order.map(p => ({ id: p.id, name: p.name, model: personaModels[p.id] || llmConfig.defaultModel }))
       });
     } catch {}
-
 
     // TTS settings
     const ttsSettings: TTSSettings = {
@@ -724,7 +818,10 @@ export default function App() {
       elevenApiKey: elevenKey,
     };
 
-    // 1) Show generic placeholder for first panelist immediately
+    // Determine if this question will use backup responses
+    const isBackupResponse = willUseBackupResponse(question);
+
+    // Show acknowledgment for the first persona (skip rendering for backup responses)
     const ackText = getAcknowledgment(first.id);
     const ackMsgId = `m-${Date.now()}-${first.id}-ack`;
     const ackMsg: Msg = {
@@ -735,76 +832,93 @@ export default function App() {
       text: ackText,
       color: first.color,
       isAcknowledgment: true,
+      isBackup: isBackupResponse,
     };
     setMessages(prev => [...prev, ackMsg]);
-    // Ingest acknowledgment into Context Engine but exclude from history
+    // Ingest acknowledgment into Context Engine but exclude from long-term history
     contextEngineRef.current.ingestMessage({ id: ackMsgId, role: 'assistant', personaId: first.id, author: first.name, text: ackText, timestamp: Date.now(), excludeFromHistory: true });
 
     scrollToEnd();
 
-    // Speak placeholder immediately
-    speakQueued(ackText, first.id);
+    if (!isBackupResponse) {
+      speakQueued(ackText, first.id);
+    }
 
-    // 2) Build enhanced system prompt and fetch first response (non-streaming)
-    const sysFirst: ChatMessage = {
-      role: 'system',
-      content: engine.buildPersonaSystemPrompt(first.systemPrompt, first.id, first.name),
-    };
-    const usedModelFirst = personaModels[first.id] || llmConfig.defaultModel;
-    const reqFirst: ChatMessage[] = [sysFirst, ...baseHistory, { role: 'user', content: question }];
-    console.log('📝 [CE] System prompt → first speaker', { personaId: first.id, personaName: first.name, model: usedModelFirst, prompt: sysFirst.content });
-    let firstAnswer = await chatWithLLM(llmConfig, { model: usedModelFirst, messages: reqFirst, personaId: first.id });
-    // Log repetition check for first speaker (diagnostic only)
-    try {
-      const rep = engine.responseIsRepetitive(firstAnswer, first.id);
-      console.log('🔁 [CE] First speaker repetition check', { personaId: first.id, personaName: first.name, repetitive: rep });
-    } catch (e) { /* noop */ }
+    // Sequential round state
+    const currentRoundMsgs: ChatMessage[] = [];
+    let disagreementOccurred = false;
 
-    // Record into context engine, then replace placeholder with real response and start TTS
-    engine.ingestMessage({ id: `e-${Date.now()}-${first.id}`, role: 'assistant', personaId: first.id, author: first.name, text: firstAnswer, timestamp: Date.now() });
+    for (let i = 0; i < order.length; i++) {
+      const p = order[i];
 
-    const firstMsg: Msg = { id: `m-${Date.now()}-${first.id}`, role: 'assistant', personaId: first.id, author: first.name, text: firstAnswer, color: first.color };
-    setMessages(prev => prev.map(m => m.id === ackMsgId ? firstMsg : m));
-    scrollToEnd();
+      if (engine.timeBudgetExceeded()) {
+        console.log('⏳ [CE] Time budget exceeded for this round; stopping further responses.');
+        break;
+      }
 
-    // Pre-generate and speak while we prepare others in parallel
-    const ttsPromiseFirst = ttsPreGenerate(firstAnswer, ttsSettings, first.id);
-    // Clear layout pin when real TTS starts (via callback), not when queued
-    speakQueued(firstAnswer, first.id, ttsPromiseFirst, () => setLayoutPinnedSpeakerId(null));
+      // Build system prompt with reactive requirements for non-first speakers
+      let sysContent = engine.buildPersonaSystemPrompt(p.systemPrompt, p.id, p.name);
+      const isFirst = i === 0;
+      if (!isFirst) {
+        sysContent += `\n\nYou are not the first speaker this round. Briefly react to at least one prior panelist by name and integrate it into your answer. Your reaction must either agree or politely disagree, and you must use explicit persona names when referencing others.`;
+        if (!disagreementOccurred && i === order.length - 1) {
+          sysContent += `\n\nNo explicit disagreement has occurred yet this round. Offer a respectful, well-grounded disagreement with a specific point from one prior panelist by name.`;
+        }
+      }
 
-    // 3) While first is speaking, trigger others in parallel
-    setInFlight(new Set(others.map(p => p.id)));
-
-    const historyAfterFirst: ChatMessage[] = [
-      ...baseHistory,
-      { role: 'assistant', content: `${first.name}: ${firstAnswer}` }
-    ];
-
-    await Promise.all(others.map(async (p) => {
-      const sys: ChatMessage = { role: 'system', content: engine.buildPersonaSystemPrompt(p.systemPrompt, p.id, p.name) };
+      const sys: ChatMessage = { role: 'system', content: sysContent };
       const usedModel = personaModels[p.id] || llmConfig.defaultModel;
-      const reqMsgs: ChatMessage[] = [sys, ...historyAfterFirst, { role: 'user', content: question }];
-      console.log('\ud83d\udcdd [CE] System prompt \u2192', { personaId: p.id, personaName: p.name, model: usedModel, prompt: sys.content });
-      let answer = await chatWithLLM(llmConfig, { model: usedModel, messages: reqMsgs, personaId: p.id });
+      const reqMsgs: ChatMessage[] = [sys, ...baseHistory, ...currentRoundMsgs, { role: 'user', content: question }];
+      console.log('📝 [CE] System prompt →', { personaId: p.id, personaName: p.name, model: usedModel, prompt: sys.content });
 
-      // Defensive: avoid repetitive responses
-      const isRep = engine.responseIsRepetitive(answer, p.id);
-      console.log('\ud83d\udd01 [CE] Repetition decision', { personaId: p.id, personaName: p.name, repetitive: isRep, sample: (answer || '').slice(0, 140) });
-      if (isRep) {
-        answer = 'SKIP';
+      setInFlight(prev => { const s = new Set(prev); s.add(p.id); return s; });
+      let answer: string;
+      let isBackup: boolean;
+      try {
+        const response = await chatWithLLM(llmConfig, { model: usedModel, messages: reqMsgs, personaId: p.id });
+        answer = response.content;
+        isBackup = response.isBackup;
+
+        // Defensive: avoid repetitive responses
+        const isRep = engine.responseIsRepetitive(answer, p.id);
+        console.log('🔁 [CE] Repetition decision', { personaId: p.id, personaName: p.name, repetitive: isRep, sample: (answer || '').slice(0, 140) });
+        if (isRep) {
+          answer = 'SKIP';
+        }
+
+        if (answer && answer.trim().toUpperCase() !== 'SKIP') {
+          // Record into context engine and UI
+          engine.ingestMessage({ id: `e-${Date.now()}-${p.id}`, role: 'assistant', personaId: p.id, author: p.name, text: answer, timestamp: Date.now() });
+          const msg: Msg = { id: `m-${Date.now()}-${p.id}`, role: 'assistant', personaId: p.id, author: p.name, text: answer, color: p.color, isBackup };
+          if (isFirst) {
+            setMessages(prev => prev.map(m => m.id === ackMsgId ? msg : m));
+          } else {
+            setMessages(prev => [...prev, msg]);
+          }
+          scrollToEnd();
+
+          // Pre-generate audio and queue TTS
+          const ttsPromise = ttsPreGenerate(answer, ttsSettings, p.id);
+          speakQueued(answer, p.id, ttsPromise, () => {
+            if (isFirst) setLayoutPinnedSpeakerId(null);
+          });
+
+          // Track if a disagreement occurred
+          if (/\bdisagree\b/i.test(answer) || /\bpush back\b/i.test(answer) || /\bchallenge\b/i.test(answer)) {
+            disagreementOccurred = true;
+          }
+
+          // Include this response for subsequent personas
+          currentRoundMsgs.push({ role: 'assistant', content: `${p.name}: ${answer}` });
+        } else {
+          // SKIP: do nothing
+        }
+      } finally {
+        setInFlight(prev => { const s = new Set(prev); s.delete(p.id); return s; });
       }
+    }
 
-      if (answer && answer.trim().toUpperCase() !== 'SKIP') {
-        engine.ingestMessage({ id: `e-${Date.now()}-${p.id}`, role: 'assistant', personaId: p.id, author: p.name, text: answer, timestamp: Date.now() });
-        const msg: Msg = { id: `m-${Date.now()}-${p.id}`, role: 'assistant', personaId: p.id, author: p.name, text: answer, color: p.color };
-        setMessages(prev => [...prev, msg]);
-        scrollToEnd();
-        const ttsPromise = ttsPreGenerate(answer, ttsSettings, p.id);
-        speakQueued(answer, p.id, ttsPromise);
-      }
 
-      setInFlight(prev => { const n = new Set(prev); n.delete(p.id); return n; });
-    }));
   }
 
 
@@ -819,6 +933,19 @@ export default function App() {
 
     setInput('');
     scrollToEnd();
+
+
+    // Special handling: If user asks for a mic check, trigger the scripted sequence instead of LLM
+    {
+      const ql = question.toLowerCase();
+      const isMicCheck = /\b(mic|microphone)\b.*\b(check|test)\b/.test(ql)
+        || /\bsound\b.*\b(check|test)\b/.test(ql)
+        || /check\s+(your|the)\s+(mics|microphones)/.test(ql);
+      if (isMicCheck) {
+        await runMicCheck();
+        return;
+      }
+    }
 
     setBusy(true);
     if (selectedPersonas.length === 0) { setBusy(false); return; }
@@ -917,6 +1044,8 @@ export default function App() {
           </button>
 
           <div className="toolbar-sep" aria-hidden></div>
+
+
 
           {/* Settings */}
           <button
@@ -1411,7 +1540,7 @@ export default function App() {
           if (m.isAcknowledgment && p) {
             return (
               <div key={m.id}>
-                <AcknowledgmentBubble persona={p} isUser={false} showTypingIndicator={showTypingIndicators} acknowledgmentText={m.text} />
+                <AcknowledgmentBubble persona={p} isUser={false} showTypingIndicator={showTypingIndicators} acknowledgmentText={m.text} isBackupResponse={m.isBackup} />
               </div>
             );
           }

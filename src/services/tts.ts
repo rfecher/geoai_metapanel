@@ -1,4 +1,4 @@
-import { speakWithPiper, PIPER_VOICE_PRESETS } from './piper';
+import { speakWithPiper, PIPER_VOICE_PRESETS, piperLengthScaleForPersona } from './piper';
 
 export type TTSProvider = 'webspeech' | 'azure' | 'elevenlabs' | 'piper';
 
@@ -188,7 +188,7 @@ export async function ttsPreGenerate(text: string, settings: TTSSettings, person
     const piperVoice = (personaId && PIPER_VOICE_PRESETS[personaId]) || 'en_US-lessac-medium';
     console.log('🎤 Using Piper voice from persona definition:', piperVoice, 'for persona:', personaId);
     try {
-      const audioData = await generatePiperAudio(cleanText, piperVoice);
+      const audioData = await generatePiperAudio(cleanText, piperVoice, personaId);
       const blob = new Blob([audioData], { type: 'audio/wav' });
       const url = URL.createObjectURL(blob);
       const audio = new Audio(url);
@@ -483,15 +483,16 @@ function escapeXml(s: string): string {
 /**
  * Generate Piper audio without playing
  */
-async function generatePiperAudio(text: string, voice: string): Promise<ArrayBuffer> {
+async function generatePiperAudio(text: string, voice: string, personaId?: string): Promise<ArrayBuffer> {
+  const lengthScale = piperLengthScaleForPersona(personaId);
   if (window.electron?.piperSpeak) {
-    return await window.electron.piperSpeak(text, voice);
+    return await window.electron.piperSpeak(text, voice, { lengthScale });
   } else {
     // HTTP fallback
     const response = await fetch('http://localhost:5050/api/tts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, voice, length_scale: 0.86 }),
+      body: JSON.stringify({ text, voice, length_scale: lengthScale }),
     });
     if (!response.ok) {
       throw new Error(`Piper HTTP ${response.status}`);
