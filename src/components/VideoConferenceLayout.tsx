@@ -7,6 +7,7 @@ type LayoutMode = 'speaker' | 'grid';
 type VideoConferenceLayoutProps = {
   personas: Persona[];
   speakingPersonaId?: string;
+  layoutPinnedSpeakerId?: string; // For layout-only pinning (e.g., during placeholder→real response transition)
   audioAmplitudes: Record<string, number>;
   visemesByPersona: Record<string, { viseme: string; open: number; wide: number; round: number }>;
   layoutMode: LayoutMode;
@@ -47,6 +48,7 @@ function renderAvatar(
 export default function VideoConferenceLayout({
   personas,
   speakingPersonaId,
+  layoutPinnedSpeakerId,
   audioAmplitudes,
   visemesByPersona,
   layoutMode,
@@ -59,7 +61,10 @@ export default function VideoConferenceLayout({
   enableListeningAnimations = true,
   meetingMode = false,
 }: VideoConferenceLayoutProps) {
-  const speakingPersona = personas.find(p => p.id === speakingPersonaId);
+  // Use layoutPinnedSpeakerId for layout decisions (which persona to show in speaker mode)
+  // but use speakingPersonaId for actual speaking animations/indicators
+  const displayedSpeakerId = speakingPersonaId || layoutPinnedSpeakerId;
+  const speakingPersona = personas.find(p => p.id === displayedSpeakerId);
 
   // Check if all personas use the same model (to hide redundant model display)
   const allModels = personas.map(p => personaModels[p.id] || defaultModel);
@@ -81,7 +86,7 @@ export default function VideoConferenceLayout({
 
   if (layoutMode === 'speaker' && speakingPersona) {
     // Speaker mode: Large speaker with small thumbnails
-    const otherPersonas = personas.filter(p => p.id !== speakingPersonaId);
+    const otherPersonas = personas.filter(p => p.id !== displayedSpeakerId);
 
     return (
       <div className="video-conference speaker-mode">
@@ -91,7 +96,7 @@ export default function VideoConferenceLayout({
               {renderAvatar(
                 speakingPersona,
                 speakerSize,
-                true,
+                !!speakingPersonaId, // Only animate as speaking if actually speaking (not just pinned)
                 false,
                 audioAmplitudes[speakingPersona.id] || 0,
                 visemesByPersona[speakingPersona.id]
@@ -125,7 +130,7 @@ export default function VideoConferenceLayout({
                   p,
                   "small",
                   false,
-                  enableListeningAnimations && !!speakingPersonaId,
+                  enableListeningAnimations && !!displayedSpeakerId,
                   0,
                   visemesByPersona[p.id]
                 )}
@@ -149,7 +154,7 @@ export default function VideoConferenceLayout({
     <div className="video-conference grid-mode">
       <div ref={gridRef} className="grid-container">
         {personas.map(p => {
-          const speaking = speakingPersonaId === p.id;
+          const speaking = speakingPersonaId === p.id; // Only highlight if actually speaking
           const thinking = inFlight.has(p.id);
           const usedModel = personaModels[p.id] || defaultModel;
 
@@ -159,12 +164,12 @@ export default function VideoConferenceLayout({
                   p,
                   gridSize,
                   speaking,
-                  enableListeningAnimations && !speaking && !!speakingPersonaId,
+                  enableListeningAnimations && !speaking && !!displayedSpeakerId,
                   audioAmplitudes[p.id] || 0,
                   visemesByPersona[p.id]
                 )}
               <div className="grid-info">
-                <div className="grid-name" style={{ color: speaking ? p.color : '#111827' }}>
+                <div className="grid-name" style={{ color: speaking ? p.color : '#f3f4f6' }}>
                   {p.name}
                 </div>
                 <div className="grid-bio">{p.shortBio}</div>

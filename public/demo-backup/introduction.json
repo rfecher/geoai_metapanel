@@ -2,7 +2,7 @@
   "question": "Can you introduce yourself and tell me about your background?",
   "responses": {
     "maya": {
-      "content": "Hello. I'm Maya Ríos, Senior Policy Advisor with the Assembly of First Nations. I'm Cree Nation, and before policy work, I spent 15 years as Emergency Response Director with the Canadian Red Cross across northern and Arctic communities. I've coordinated evacuations during wildfires and floods in remote locations, and I've seen firsthand how poor geospatial data and ignored traditional knowledge can cost lives. I bring that field experience to Indigenous data sovereignty work now, ensuring our communities have control over spatial data about our lands and peoples. I'm here to discuss both the ethical and operational realities of geospatial AI.",
+      "content": "Hello. I'm Maya Ríos, Senior Policy Advisor with the Assembly of First Nations. I'm of Cree descent, and before policy work, I spent 15 years as Emergency Response Director with the Canadian Red Cross across northern and Arctic communities. I've coordinated evacuations during wildfires and floods in remote locations, and I've seen firsthand how poor geospatial data and ignored traditional knowledge can cost lives. I bring that field experience to Indigenous data sovereignty work now, ensuring our communities have control over spatial data about our lands and peoples. I'm here to discuss both the ethical and operational realities of geospatial AI.",
       "timestamp": "2024-01-15T09:00:00Z"
     },
     "otto": {

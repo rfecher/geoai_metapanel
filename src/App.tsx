@@ -82,6 +82,7 @@ export default function App() {
   const [azureKey, setAzureKey] = useState('');
   const [elevenKey, setElevenKey] = useState('');
   const [speakingId, setSpeakingId] = useState<string | null>(null);
+  const [layoutPinnedSpeakerId, setLayoutPinnedSpeakerId] = useState<string | null>(null);
   const [inFlight, setInFlight] = useState<Set<string>>(new Set());
 
   // Whisper STT state
@@ -124,6 +125,16 @@ export default function App() {
     color: string;
     text: string;
   } | null>(null);
+
+
+  // Debug: track meetingMode, captionsEnabled, and activeCaption changes
+  useEffect(() => {
+    console.log('[App] State', {
+      meetingMode,
+      captionsEnabled,
+      activeCaption,
+    });
+  }, [meetingMode, captionsEnabled, activeCaption]);
 
   const [layoutMode, setLayoutMode] = useState<'speaker' | 'grid'>('grid');
 
@@ -172,16 +183,16 @@ export default function App() {
     return () => setTtsVisemeListener(null);
   }, []);
 
-  // Auto-switch layout mode based on speaking state
+  // Auto-switch layout mode based on speaking state or a layout-pinned speaker
   useEffect(() => {
-    if (speakingId) {
+    if (speakingId || layoutPinnedSpeakerId) {
       setLayoutMode('speaker');
     } else {
-      // Switch to grid when no one is speaking
+      // Switch to grid when no one is speaking and no one is layout-pinned
       const timer = setTimeout(() => setLayoutMode('grid'), 500);
       return () => clearTimeout(timer);
     }
-  }, [speakingId]);
+  }, [speakingId, layoutPinnedSpeakerId]);
 
   // Check Piper and Whisper availability on startup
   useEffect(() => {
@@ -403,7 +414,7 @@ export default function App() {
     }
   }, [speakingId, busy, isRecording, isTranscribing, wakeWordSupported, wakeWordEnabled, whisperAvailable, wakeWordAutoStarted]);
 
-  const speakQueued = useCallback((text: string, personaId?: string, preGeneratedAudioPromise?: Promise<HTMLAudioElement | null>) => {
+  const speakQueued = useCallback((text: string, personaId?: string, preGeneratedAudioPromise?: Promise<HTMLAudioElement | null>, onStartCallback?: () => void) => {
     const settings: TTSSettings = {
       provider: ttsProvider,
       defaultVoice,
@@ -414,12 +425,17 @@ export default function App() {
     };
     ttsChain = ttsChain.then(async () => {
       if (personaId) setSpeakingId(personaId);
-      // If captions are enabled, show this utterance as a live caption
-      if (personaId && captionsEnabled) {
+      // Clear layout pin when TTS actually starts (not when queued)
+      if (onStartCallback) onStartCallback();
+      // Always set live caption on utterance start; visibility is controlled by captionsEnabled
+      if (personaId) {
         const found = selectedPersonasMerged.find(x => x.id === personaId) || personas.find(x => x.id === personaId);
         const personaName = found?.name ?? 'Assistant';
         const color = found?.color ?? '#ffffff';
+        console.log('[CC] setActiveCaption', { personaId, personaName, text, captionsEnabled });
         setActiveCaption({ personaId, personaName, color, text });
+      } else {
+        console.log('[CC] not setting caption (no personaId)', { personaId, captionsEnabled });
       }
 
       try {
@@ -442,13 +458,14 @@ export default function App() {
         if (personaId) {
           setSpeakingId(prev => (prev === personaId ? null : prev));
           // Clear caption only if it belongs to this persona
+          console.log('[CC] clearing caption for persona if matches', personaId);
           setActiveCaption(prev => (prev && prev.personaId === personaId ? null : prev));
         }
       }
 
     });
     return ttsChain;
-  }, [ttsProvider, defaultVoice, personaVoices, azureRegion, azureKey, elevenKey, captionsEnabled, selectedPersonasMerged]);
+  }, [ttsProvider, defaultVoice, personaVoices, azureRegion, azureKey, elevenKey, selectedPersonasMerged]);
 
   const skipCurrentSpeaker = useCallback(() => {
     console.log('🛑 Skip button clicked - skipping current speaker only');
@@ -458,8 +475,10 @@ export default function App() {
 
     // Clear the speaking indicator
     setSpeakingId(null);
+    setLayoutPinnedSpeakerId(null);
 
     // Also clear live captions if any
+    console.log('[CC] setActiveCaption(null) due to skipCurrentSpeaker');
     setActiveCaption(null);
 
 
@@ -684,6 +703,8 @@ export default function App() {
     const firstId = engine.selectFirstPanelist(participants);
     const first = selectedPersonas.find(p => p.id === firstId) || selectedPersonas[0];
     const others = selectedPersonas.filter(p => p.id !== first.id);
+    // Pin first speaker in layout to prevent grid flash during placeholder→real response transition
+    setLayoutPinnedSpeakerId(first.id);
     // Log round models per persona
     try {
       console.log('🟡 [CE] Round start', {
@@ -748,7 +769,8 @@ export default function App() {
 
     // Pre-generate and speak while we prepare others in parallel
     const ttsPromiseFirst = ttsPreGenerate(firstAnswer, ttsSettings, first.id);
-    speakQueued(firstAnswer, first.id, ttsPromiseFirst);
+    // Clear layout pin when real TTS starts (via callback), not when queued
+    speakQueued(firstAnswer, first.id, ttsPromiseFirst, () => setLayoutPinnedSpeakerId(null));
 
     // 3) While first is speaking, trigger others in parallel
     setInFlight(new Set(others.map(p => p.id)));
@@ -824,6 +846,7 @@ export default function App() {
       <VideoConferenceLayout
         personas={selectedPersonasMerged}
         speakingPersonaId={speakingId ?? undefined}
+        layoutPinnedSpeakerId={layoutPinnedSpeakerId ?? undefined}
         audioAmplitudes={ampByPersona}
         visemesByPersona={visemeByPersona}
         layoutMode={layoutMode}
@@ -839,9 +862,9 @@ export default function App() {
       />
 
       {/* Live captions overlay (toggleable, with transitions) */}
-      {meetingMode && captionsEnabled && (
+      {meetingMode && (
         <CaptionsOverlay
-          visible={!!activeCaption}
+          visible={captionsEnabled && !!activeCaption}
           text={activeCaption?.text || ''}
           personaName={activeCaption?.personaName || ''}
           color={activeCaption?.color || '#fff'}
@@ -866,7 +889,7 @@ export default function App() {
           {/* View controls: mode, layout, captions */}
           <button
             className="toolbar-button mode"
-            onClick={() => setMeetingMode(m => !m)}
+            onClick={() => setMeetingMode(m => { const next = !m; console.log('[Toolbar] Meeting mode toggled ->', next); return next; })}
             aria-pressed={meetingMode}
             title="Toggle meeting vs chat UI"
           >
@@ -885,7 +908,7 @@ export default function App() {
 
           <button
             className={`toolbar-button cc ${captionsEnabled ? 'active' : ''}`}
-            onClick={() => setCaptionsEnabled(c => !c)}
+            onClick={() => setCaptionsEnabled(c => { const next = !c; console.log('[CC] captionsEnabled toggled ->', next); return next; })}
             aria-pressed={captionsEnabled}
             title="Toggle live captions"
           >

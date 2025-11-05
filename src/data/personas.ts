@@ -75,8 +75,8 @@ export const personas: Persona[] = [
   {
     id: 'maya',
     name: 'Maya Ríos',
-    shortBio: 'Indigenous data sovereignty policy advisor (Cree Nation); former emergency response director; ethics and field operations.',
-    color: '#7C3AED',
+    shortBio: 'Senior Policy Advisor with the Assembly of First Nations Canada',
+    color: '#FFFFFF',
     avatarInitials: 'MR',
     imageUrl: undefined,  // Using BrandedAvatar with conference backdrop and logo
     eyeColor: '#5C4338', // Deep brown eyes
@@ -133,7 +133,7 @@ Background:
 - Brought field expertise to AFN's Indigenous Data Governance Initiative - now leads policy on spatial data sovereignty with pragmatic, evidence-based approach
 
 Speaking style:
-- British-inflected English with occasional Cree phrases, measured and precise
+- British-inflected English, measured and precise
 - Cites field statistics and survival rates alongside traditional ecological knowledge
 - "I've been in the helicopter and the policy room" - bridges practical operations and Indigenous rights
 - Uses "we" for Indigenous communities, "I've seen" when referencing field experience
@@ -176,8 +176,8 @@ CRITICAL OUTPUT FORMAT REQUIREMENTS:
   {
     id: 'otto',
     name: 'Prof. Otto Reinhardt',
-    shortBio: 'Professor emeritus of cartography and spatial reference systems; standards‑focused spatial ontologist.',
-    color: '#2563EB',
+    shortBio: 'Professor Emeritus of Cartography at Vienna University of Technology',
+    color: '#FFFFFF',
     faceAnchors: {
         "mouth": {
             "xPct": 53.466796875,
@@ -274,8 +274,8 @@ CRITICAL OUTPUT FORMAT REQUIREMENTS:
   {
     id: 'sarah',
     name: 'Dr. Sarah Chen',
-    shortBio: 'Mozilla Foundation principal research scientist; open geospatial AI advocate and community organizer.',
-    color: '#059669',
+    shortBio: 'Principal Research Scientist, Mozilla Foundation ',
+    color: '#FFFFFF',
     avatarInitials: 'SH',
     imageUrl: undefined,  // Using BrandedAvatar with conference backdrop and logo
     eyeColor: '#4A3832', // Dark brown eyes
@@ -371,8 +371,8 @@ CRITICAL OUTPUT FORMAT REQUIREMENTS:
   {
     id: 'marcus',
     name: 'Dr. Marcus Webb',
-    shortBio: 'VP of Geospatial AI at Palantir; deployments in disaster response, counter‑terrorism, and critical infrastructure.',
-    color: '#0EA5E9',
+    shortBio: 'VP of Geospatial AI at Palantir',
+    color: '#FFFFFF',
     avatarInitials: 'MW',
     imageUrl: undefined,  // Using BrandedAvatar with conference backdrop and logo
     eyeColor: '#6B4E3D', // Brown eyes
@@ -470,8 +470,8 @@ CRITICAL OUTPUT FORMAT REQUIREMENTS:
   ,{
     id: 'jessica',
     name: 'Lt. Colonel Jessica Hayes',
-    shortBio: 'Director of Geospatial Intelligence, US Space Force; 18 year military intelligence officer; operational GEOINT leadership.',
-    color: '#8B5CF6',
+    shortBio: 'Director of Geospatial Intelligence, US Space Force',
+    color: '#FFFFFF',
     avatarInitials: 'JH',
     imageUrl: undefined,  // Using BrandedAvatar with conference backdrop and logo
     eyeColor: '#494d4b', // Blue-hazel eyes

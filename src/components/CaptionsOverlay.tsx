@@ -20,12 +20,34 @@ export default function CaptionsOverlay({ visible, text, personaName, color }: C
   const [lastText, setLastText] = useState<string>('');
   const [lastPersona, setLastPersona] = useState<string>('');
   const [lastColor, setLastColor] = useState<string>('#fff');
+  const [hasEverShown, setHasEverShown] = useState<boolean>(false);
+
+  // Debug: mount/unmount
+  useEffect(() => {
+    console.log('[CaptionsOverlay] mount');
+    return () => {
+      console.log('[CaptionsOverlay] unmount');
+    };
+  }, []);
+
+  // Debug: track props/state updates
+  useEffect(() => {
+    console.log('[CaptionsOverlay] update', {
+      visible,
+      text: text || '',
+      cleaned,
+      isShowing,
+      hasEverShown,
+    });
+  }, [visible, text, isShowing, hasEverShown]);
+
 
   useEffect(() => {
     if (cleaned) {
       setLastText(cleaned);
       setLastPersona(personaName || '');
       setLastColor(color || '#fff');
+      setHasEverShown(true);
     }
   }, [cleaned, personaName, color]);
 
@@ -33,8 +55,8 @@ export default function CaptionsOverlay({ visible, text, personaName, color }: C
   const displayPersona = isShowing ? (personaName || '') : lastPersona;
   const displayColor = isShowing ? (color || '#fff') : lastColor;
 
-  // Render wrapper always (when component is mounted) to allow CSS show/hide transitions
-  if (!displayText) return null;
+  // Don't render until we have content to show (or have shown content before for fade-out)
+  if (!hasEverShown && !displayText) return null;
 
   return (
     <div

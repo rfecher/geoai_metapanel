@@ -438,6 +438,11 @@ body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Helve
   color: white;
   margin-bottom: 4px;
   transition: color 0.3s ease;
+  /* Enhanced visibility with text shadow for contrast */
+  text-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.8),
+    0 2px 6px rgba(0, 0, 0, 0.6),
+    0 0 8px rgba(0, 0, 0, 0.4);
 }
 
 /* Branded placeholder tile styles (meeting mode, subtle) */
